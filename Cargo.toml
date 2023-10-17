@@ -1,0 +1,13 @@
+[package]
+name = "graph"
+version = "0.0.1"
+edition = "2021"
+
+[lib]
+name = "graph"
+path = "src/main/rust/lib.rs"
+
+[dependencies]
+env_logger = "0.9"
+log = "0.4"
+thiserror = "1.0"
