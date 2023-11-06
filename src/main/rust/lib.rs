@@ -5,8 +5,7 @@ use std::io::Write;
 pub mod algo;
 pub mod error;
 pub mod graph;
-
-
+pub mod sd;
 
 pub fn graph_to_dot (graph: graph::Graph, file_path: &str)
     -> Result<(), error::GraphError>

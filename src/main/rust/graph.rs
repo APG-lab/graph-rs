@@ -183,18 +183,24 @@ pub struct Graph
 {
     name: String,
     vertices: collections::HashSet <usize>,
+    #[serde(with="crate::sd::key_pair_usize")]
     edges: collections::HashMap <(usize,usize), i64>,
+    #[serde(with="crate::sd::key_usize")]
     inbound: collections::HashMap <usize, collections::HashSet <usize>>,
+    #[serde(with="crate::sd::key_usize")]
     outbound: collections::HashMap <usize, collections::HashSet <usize>>
 }
 
-#[derive(Debug,Deserialize,Serialize)]
+#[derive(Clone,Debug,Deserialize,Serialize)]
 pub struct LabelledGraph
 {
     vertex_id: sync::Arc::<sync::atomic::AtomicUsize>,
+    #[serde(with="crate::sd::key_pair_usize")]
     edge_attrs: collections::HashMap<(usize,usize), collections::HashMap<String, AttributeValue>>,
     graph: Graph,
+    #[serde(with="crate::sd::key_usize")]
     vertex_attrs: collections::HashMap<usize, collections::HashMap<String, AttributeValue>>,
+    #[serde(with="crate::sd::key_usize")]
     vertex_label: collections::HashMap<usize, String>,
     vertex_lookup: collections::HashMap<String, usize>
 }
@@ -675,6 +681,7 @@ impl PartialEq for LabelledGraph
 #[cfg(test)]
 mod tests
 {
+    use serde_json;
     use std::collections;
     use super::*;
 
@@ -687,7 +694,7 @@ mod tests
         INIT.call_once (env_logger::init);
     }
 
-        #[test]
+    #[test]
     fn test_remove ()
     {
         init ();
@@ -711,5 +718,62 @@ mod tests
         assert_eq! (g.vertices (), &collections::HashSet::<usize>::from ([0,3,2]));
         assert_eq! (g.inbound (&1).unwrap_err ().to_string (), "Vertex error: Vertex: 1 not found in graph");
         assert_eq! (g.outbound (&1).unwrap_err ().to_string (), "Vertex error: Vertex: 1 not found in graph");
+    }
+
+    #[test]
+    fn test_serde_json ()
+    {
+        init ();
+        let mut g = Graph::new ();
+        g.add_edge_raw (2,1,0).expect ("Failed to add edge 2 -> 1");
+        g.add_edge_raw (3,1,0).expect ("Failed to add edge 3 -> 1");
+        g.add_edge_raw (1,0,0).expect ("Failed to add edge 1 -> 0");
+
+        let v = serde_json::to_value (g.clone ()).expect ("Failed to serialize Graph");
+        let h = serde_json::from_value (v).expect ("Failed to deserialize Graph");
+
+        assert_eq! (g,h);
+    }
+
+    #[test]
+    fn test_serde_json_labelled ()
+    {
+        init ();
+        let mut g = LabelledGraph::new ();
+        g.add_edge (String::from ("c"), String::from ("b"), None).expect ("Failed to add edge c -> b");
+        g.add_edge (String::from ("d"), String::from ("b"), None).expect ("Failed to add edge d -> b");
+        g.add_edge (String::from ("b"), String::from ("a"), None).expect ("Failed to add edge b -> a");
+
+        let v = serde_json::to_value (g.clone ()).expect ("Failed to serialize LabelledGraph");
+        let h = serde_json::from_value (v).expect ("Failed to deserialize LabelledGraph");
+
+        assert_eq! (g,h);
+    }
+
+    #[test]
+    fn test_serde_json_labelled_attributes ()
+    {
+        init ();
+
+        let bool_map = collections::HashMap::<String, bool>::from ([ (String::from ("false"), false), (String::from ("true"), true) ]);
+        let string_map = collections::HashMap::<String, String>::from ([ (String::from ("foo"), String::from ("bar")) ]);
+        let string_set = collections::HashSet::<String>::from ([String::from ("foo"), String::from ("bar") ]);
+        let attrs = collections::HashMap::<String, AttributeValue>::from ([
+            (String::from ("bool"), AttributeValue::BooleanLiteral (true)),
+            (String::from ("bool_map"), AttributeValue::BooleanMap (bool_map)),
+            (String::from ("integer"), AttributeValue::IntegerLiteral (0)),
+            (String::from ("float"), AttributeValue::FloatLiteral (0.0)),
+            (String::from ("string_map"), AttributeValue::StringMap (string_map)),
+            (String::from ("string_set"), AttributeValue::StringSet (string_set))
+        ]);
+
+        let mut g = LabelledGraph::new ();
+        g.add_vertex (String::from ("a"), Some (attrs.clone ())).expect ("Failed to add vertex_attrs for a");
+        g.add_edge (String::from ("b"), String::from ("a"), Some (attrs)).expect ("Failed to add edge b -> a");
+
+        let v = serde_json::to_value (g.clone ()).expect ("Failed to serialize LabelledGraph");
+        let h = serde_json::from_value (v).expect ("Failed to deserialize LabelledGraph");
+
+        assert_eq! (g,h);
     }
 }
