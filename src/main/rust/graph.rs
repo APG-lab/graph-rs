@@ -1,10 +1,11 @@
 
 use log::debug;
+use serde::{Serialize,Deserialize};
 use std::collections;
 use std::fmt;
 use std::sync;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone,Debug,Deserialize,Serialize,PartialEq)]
 pub enum AttributeValue
 {
     BooleanLiteral (bool),
@@ -177,7 +178,7 @@ impl fmt::Display for AttributeValue
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone,Debug,Deserialize,Serialize,PartialEq)]
 pub struct Graph
 {
     name: String,
@@ -187,7 +188,7 @@ pub struct Graph
     outbound: collections::HashMap <usize, collections::HashSet <usize>>
 }
 
-#[derive(Debug)]
+#[derive(Debug,Deserialize,Serialize)]
 pub struct LabelledGraph
 {
     vertex_id: sync::Arc::<sync::atomic::AtomicUsize>,
