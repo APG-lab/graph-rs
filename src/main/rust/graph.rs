@@ -1170,6 +1170,21 @@ impl GraphAny for Graph
     }
 }
 
+impl GraphAny for UGraph
+{
+    fn neighbours (&self, a: &usize)
+        -> Result<collections::HashSet<usize>, crate::error::GraphError>
+    {
+        self.neighbours (a)
+    }
+
+    fn vertices (&self)
+        -> &collections::HashSet<usize>
+    {
+        self.vertices ()
+    }
+}
+
 #[cfg(test)]
 mod tests
 {
