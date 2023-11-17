@@ -4,7 +4,7 @@ use crate::graph;
 //use log::debug;
 use std::collections;
 
-pub fn bfs_edges (g: &graph::Graph, source: usize)
+pub fn bfs_edges<G: graph::GraphAny> (g: &G, source: usize)
     -> Result<Vec<(usize, usize)>, error::GraphError>
 {
     let neighbours = g.vertices ().iter ().fold (collections::HashMap::<usize, collections::HashSet<usize>>::new (), |mut acc, item| {
