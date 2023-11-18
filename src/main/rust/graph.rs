@@ -812,10 +812,7 @@ impl LabelledGraph
     {
         match ( self.vertex_label.get (&a_id), self.vertex_label.get (&b_id) )
         {
-            (Some (a), Some (b)) => {
-                debug! ("found both vertices");
-                Ok ( (a.clone (), b.clone ()) )
-            },
+            (Some (a), Some (b)) => Ok ( (a.clone (), b.clone ()) ),
             (Some (a), None) => Err (crate::error::GraphError::EdgeError (format! ("Found {} {}. Failed to find vertex b: {}", a_id, a, b_id))),
             (None, Some (b)) => Err (crate::error::GraphError::EdgeError (format! ("failed to find vertex a: {}. Found {} {}", a_id, b_id, b))),
             _ => Err (crate::error::GraphError::EdgeError (format! ("failed to find both vertices: {} {}", a_id, b_id)))
@@ -1072,17 +1069,7 @@ impl LabelledUGraph
     {
         match ( self.vertex_label.get (&a_id), self.vertex_label.get (&b_id) )
         {
-            (Some (a), Some (b)) => {
-                debug! ("found both vertices");
-                if a_id < b_id
-                {
-                    Ok ( (a.clone (), b.clone ()) )
-                }
-                else
-                {
-                    Ok ( (b.clone (), a.clone ()) )
-                }
-            },
+            (Some (a), Some (b)) => Ok ( (a.clone (), b.clone ()) ),
             (Some (a), None) => Err (crate::error::GraphError::EdgeError (format! ("Found {} {}. Failed to find vertex b: {}", a_id, a, b_id))),
             (None, Some (b)) => Err (crate::error::GraphError::EdgeError (format! ("failed to find vertex a: {}. Found {} {}", a_id, b_id, b))),
             _ => Err (crate::error::GraphError::EdgeError (format! ("failed to find both vertices: {} {}", a_id, b_id)))
