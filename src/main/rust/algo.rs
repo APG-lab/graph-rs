@@ -39,6 +39,45 @@ pub fn bfs_edges<G: graph::GraphAny> (g: &G, source: usize)
     Ok (r)
 }
 
+pub fn single_shortest_path<G: graph::GraphAny> (g: &G, source: usize)
+    -> Result<collections::HashMap<usize, Vec<usize>>, error::GraphError>
+{
+    let neighbours = g.vertices ().iter ().fold (collections::HashMap::<usize, collections::HashSet<usize>>::new (), |mut acc, item| {
+        acc.insert (*item, g.neighbours (item).unwrap ());
+        acc
+        });
+    let mut neighbours_iters = neighbours.iter ().fold (collections::HashMap::<usize, collections::hash_set::Iter<'_, usize>>::new (), |mut acc, (k, v)| {
+        acc.insert (*k, v.iter () );
+        acc
+    });
+
+    let mut r = collections::HashMap::<usize, Vec<usize>>::from ([ (source, vec![source]) ]);
+    let mut queue = collections::VecDeque::<(usize, usize)>::from (vec![(source, 0)]);
+
+    while let Some ( (parent, current_depth ) ) = queue.front ()
+    {
+        if let Some (child) = neighbours_iters.get_mut (parent).ok_or (error::GraphError::AlgorithmError (format! ("No neigbours iter for {}", parent)))?.next ()
+        {
+            if !r.contains_key (child)
+            {
+                //r.push ( (*parent, *child) );
+                let mut path = Vec::with_capacity (r[parent].len () +1);
+                path.extend (r[parent].as_slice ());
+                path.push (*child);
+                r.insert (*child, path);
+                queue.push_back ( (*child, *current_depth + 1) );
+            }
+        }
+        else
+        {
+                queue.pop_front ();
+        }
+    }
+
+
+    Ok (r)
+}
+
 pub fn topological_sort (g: &graph::Graph)
     -> Result<Vec<usize>, error::GraphError>
 {
@@ -131,6 +170,39 @@ mod tests
             ]);
         let r = bfs_edges (&g, 1).unwrap ();
         assert! (solutions.contains (&r), "{:?} not found in {:?}", r, solutions);
+    }
+
+    #[test]
+    fn test_single_shortest_path ()
+    {
+        init ();
+        let mut g = graph::Graph::new ();
+        //       1
+        //      / \
+        //     /   \
+        //    /     \
+        //   2       3
+        //  / \     / \
+        // 4   5   6   7
+        g.add_edge_raw (2,1,0).expect ("Failed to add edge 2 -> 1");
+        g.add_edge_raw (3,1,0).expect ("Failed to add edge 3 -> 1");
+        g.add_edge_raw (4,2,0).expect ("Failed to add edge 4 -> 2");
+        g.add_edge_raw (5,2,0).expect ("Failed to add edge 5 -> 2");
+        g.add_edge_raw (6,3,0).expect ("Failed to add edge 6 -> 3");
+        g.add_edge_raw (7,3,0).expect ("Failed to add edge 7 -> 3");
+
+        let solution = collections::HashMap::from ([
+            (1, vec![1]),
+            (2, vec![1,2]),
+            (3, vec![1,3]),
+            (4, vec![1,2,4]),
+            (5, vec![1,2,5]),
+            (6, vec![1,3,6]),
+            (7, vec![1,3,7])
+        ]);
+
+        let r = single_shortest_path (&g, 1).unwrap ();
+        assert_eq! (r,solution);
     }
 }
 
