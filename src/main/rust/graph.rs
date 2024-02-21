@@ -768,6 +768,19 @@ impl LabelledGraph
         }
     }
 
+    pub fn vertex (&self, a: &str)
+        -> Result<usize, crate::error::GraphError>
+    {
+        if let Some (a_id) = self.vertex_lookup.get (a)
+        {
+            Ok (*a_id)
+        }
+        else
+        {
+            Err (crate::error::GraphError::VertexError (format! ("Failed to find vertex: {}", a)))
+        }
+    }
+
     pub fn vertex_label (&self, a_id: &usize)
         -> Result<String, crate::error::GraphError>
     {
@@ -1017,6 +1030,19 @@ impl LabelledUGraph
                 },
                 Err (e) => Err (e)
             }
+        }
+        else
+        {
+            Err (crate::error::GraphError::VertexError (format! ("Failed to find vertex: {}", a)))
+        }
+    }
+
+    pub fn vertex (&self, a: &str)
+        -> Result<usize, crate::error::GraphError>
+    {
+        if let Some (a_id) = self.vertex_lookup.get (a)
+        {
+            Ok (*a_id)
         }
         else
         {
