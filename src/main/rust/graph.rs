@@ -22,13 +22,26 @@ impl AttributeValue
     pub fn get_bool_literal (&self)
     -> bool
     {
-        if let AttributeValue::BooleanLiteral (maybe) = *self
+        if let AttributeValue::BooleanLiteral (val) = *self
         {
-            maybe
+            val
         }
         else
         {
             unreachable! ("Must only be called with BooleanLiteral");
+        }
+    }
+
+    pub fn get_string_literal (&self)
+        -> &String
+    {
+        if let AttributeValue::StringLiteral (val) = self
+        {
+            val
+        }
+        else
+        {
+            unreachable! ("Must only be called with StringLiteral");
         }
     }
 
