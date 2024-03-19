@@ -833,12 +833,21 @@ impl LabelledGraph
         }
     }
 
-    pub fn edge_labels (&self, (a_id, b_id): (usize, usize))
+    pub fn edge_labels (&self, (a_id, b_id): &(usize, usize))
         -> Result<(String, String), crate::error::GraphError>
     {
         match ( self.vertex_label.get (&a_id), self.vertex_label.get (&b_id) )
         {
-            (Some (a), Some (b)) => Ok ( (a.clone (), b.clone ()) ),
+            (Some (a), Some (b)) => {
+                if self.graph.has_edge_raw ( &(*a_id, *b_id) )
+                {
+                    Ok ( (a.clone (), b.clone ()) )
+                }
+                else
+                {
+                    Err (crate::error::GraphError::EdgeError (format! ("No edge found between {} and {}", a_id, b_id)))
+                }
+            },
             (Some (a), None) => Err (crate::error::GraphError::EdgeError (format! ("Found {} {}. Failed to find vertex b: {}", a_id, a, b_id))),
             (None, Some (b)) => Err (crate::error::GraphError::EdgeError (format! ("failed to find vertex a: {}. Found {} {}", a_id, b_id, b))),
             _ => Err (crate::error::GraphError::EdgeError (format! ("failed to find both vertices: {} {}", a_id, b_id)))
@@ -1103,7 +1112,7 @@ impl LabelledUGraph
         }
     }
 
-    pub fn edge_labels (&self, (a_id, b_id): (usize, usize))
+    pub fn edge_labels (&self, (a_id, b_id): &(usize, usize))
         -> Result<(String, String), crate::error::GraphError>
     {
         match ( self.vertex_label.get (&a_id), self.vertex_label.get (&b_id) )
@@ -1280,7 +1289,7 @@ mod tests
     }
 
     #[test]
-    fn test_undirected_u ()
+    fn test_undirected_edges_u ()
     {
         init ();
         let mut g = UGraph::new ();
@@ -1288,6 +1297,64 @@ mod tests
         g.add_edge_raw (1,2,0).expect ("Failed to add edge 1 -- 2");
         g.add_edge_raw (2,1,0).expect ("Failed to add edge 2 -- 1");
         assert_eq! (g.edges (), &collections::HashMap::<(usize, usize), i64>::from ([ ( (1,2), 0 )]));
+    }
+
+    #[test]
+    fn test_has_edge_raw ()
+    {
+        init ();
+        let mut g = Graph::new ();
+
+        g.add_edge_raw (1,2,0).expect ("Failed to add edge 1 -- 2");
+
+        assert! (g.has_edge_raw ( &(1,2) ), "has_edge_raw 1 -> 2 failed");
+        assert! (!g.has_edge_raw ( &(2,1) ), "has_edge_raw 2 -> 1 succeeded");
+    }
+
+    #[test]
+    fn test_has_edge_raw_u ()
+    {
+        init ();
+        let mut g = UGraph::new ();
+
+        g.add_edge_raw (1,2,0).expect ("Failed to add edge 1 -- 2");
+
+        assert! (g.has_edge_raw ( &(1,2) ), "has_edge_raw 1 -> 2 failed");
+        assert! (g.has_edge_raw ( &(2,1) ), "has_edge_raw 2 -> 1 failed");
+    }
+
+    #[test]
+    fn test_edge_labelled ()
+    {
+        init ();
+        let mut g = LabelledGraph::new ();
+        g.add_edge (String::from ("a"), String::from ("b"), None).expect ("Failed to add edge a -> b");
+
+        let va = g.vertex ("a").expect ("Failed to get vertex id for a");
+        let vb = g.vertex ("b").expect ("Failed to get vertex id for b");
+
+        let el = g.edge_labels ( &(va, vb) ).expect ("Failed to get edge_labels for a -> b");
+
+        assert_eq! (el, (String::from ("a"), String::from ("b")));
+        assert_eq! (g.edge_labels ( &(vb, va) ).unwrap_err ().to_string (), "Edge error: No edge found between 2 and 1");
+    }
+
+    #[test]
+    fn test_edge_labelled_u ()
+    {
+        init ();
+        let mut g = LabelledUGraph::new ();
+        g.add_edge (String::from ("a"), String::from ("b"), None).expect ("Failed to add edge a -> b");
+
+        let va = g.vertex ("a").expect ("Failed to get vertex id for a");
+        let vb = g.vertex ("b").expect ("Failed to get vertex id for b");
+
+        let elf = g.edge_labels ( &(va, vb) ).expect ("Failed to get edge_labels for a -> b");
+        let elr = g.edge_labels ( &(vb, va) ).expect ("Failed to get edge_labels for b -> a");
+
+
+        assert_eq! (elf, (String::from ("a"), String::from ("b")));
+        assert_eq! (elr, (String::from ("b"), String::from ("a")));
     }
 
     #[test]
