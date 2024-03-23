@@ -13,6 +13,7 @@ pub enum AttributeValue
     IntegerLiteral (i64),
     FloatLiteral (f64),
     StringLiteral (String),
+    StringArray (Vec<String>),
     StringMap (collections::HashMap<String,String>),
     StringSet (collections::HashSet<String>)
 }
@@ -185,6 +186,7 @@ impl fmt::Display for AttributeValue
             AttributeValue::FloatLiteral (float) => write!(f, "{}", float),
             AttributeValue::IntegerLiteral (integer) => write!(f, "{}", integer),
             AttributeValue::StringLiteral (string) => f.pad(string),
+            AttributeValue::StringArray (string_vec) => f.pad(&Vec::from_iter (string_vec.iter ().cloned ()).join (",")),
             AttributeValue::StringMap (string_map) => f.pad(&string_map.iter ().map (|(k,v)| format! ("{}:{}", k,v)).collect::<Vec<String>> ().join (",")),
             AttributeValue::StringSet (string_set) => f.pad(&Vec::from_iter (string_set.iter ().cloned ()).join (","))
         }
@@ -1393,6 +1395,7 @@ mod tests
         init ();
 
         let bool_map = collections::HashMap::<String, bool>::from ([ (String::from ("false"), false), (String::from ("true"), true) ]);
+        let string_vec = vec![String::from ("one"), String::from ("two")];
         let string_map = collections::HashMap::<String, String>::from ([ (String::from ("foo"), String::from ("bar")) ]);
         let string_set = collections::HashSet::<String>::from ([String::from ("foo"), String::from ("bar") ]);
         let attrs = collections::HashMap::<String, AttributeValue>::from ([
@@ -1400,6 +1403,8 @@ mod tests
             (String::from ("bool_map"), AttributeValue::BooleanMap (bool_map)),
             (String::from ("integer"), AttributeValue::IntegerLiteral (0)),
             (String::from ("float"), AttributeValue::FloatLiteral (0.0)),
+            (String::from ("string_array"), AttributeValue::StringArray (string_vec)),
+            (String::from ("string"), AttributeValue::StringLiteral (String::from ("string"))),
             (String::from ("string_map"), AttributeValue::StringMap (string_map)),
             (String::from ("string_set"), AttributeValue::StringSet (string_set))
         ]);
