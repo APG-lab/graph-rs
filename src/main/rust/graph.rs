@@ -365,6 +365,26 @@ impl Graph
         }
     }
 
+    pub fn is_root (&self, a: &usize)
+        -> Result<bool, crate::error::GraphError>
+    {
+        if self.vertices.contains (a)
+        {
+            if let Some (outbound_a) = self.outbound.get (a)
+            {
+                Ok (outbound_a.is_empty ())
+            }
+            else
+            {
+                Ok (true)
+            }
+        }
+        else
+        {
+            Err (crate::error::GraphError::VertexError (format! ("Vertex: {} not found in graph", a)))
+        }
+    }
+
     pub fn name (&self)
         -> String
     {
@@ -456,6 +476,12 @@ impl Graph
         }
         self.vertices.remove (a);
         Ok (())
+    }
+
+    pub fn roots (&self)
+        -> collections::HashSet <usize>
+    {
+        self.vertices.iter ().filter (|x| !self.outbound.contains_key (x)).copied ().collect::<collections::HashSet::<usize>> ()
     }
 
     pub fn vertices (&self)
@@ -862,12 +888,6 @@ impl LabelledGraph
         self.vertex_lookup.contains_key (&a) && self.vertex_lookup.contains_key (&b) && self.graph.edges.contains_key ( &(self.vertex_lookup[&a], self.vertex_lookup[&b]) )
     }
 
-    pub fn leaves (&self)
-        -> collections::HashSet::<usize>
-    {
-        self.graph.leaves ()
-    }
-
     pub fn relabel_vertex (&mut self, a_id: &usize, vertex_label_next: String)
         -> Result<(), crate::error::GraphError>
     {
@@ -1236,6 +1256,32 @@ mod tests
     fn init ()
     {
         INIT.call_once (env_logger::init);
+    }
+
+    #[test]
+    fn test_leaves_and_roots ()
+    {
+        init ();
+        let mut g = Graph::new ();
+        g.add_edge_raw (2,1,0).expect ("Failed to add edge 2 -> 1");
+        g.add_edge_raw (3,1,0).expect ("Failed to add edge 3 -> 1");
+        g.add_edge_raw (1,0,0).expect ("Failed to add edge 1 -> 0");
+        g.add_edge_raw (6,5,0).expect ("Failed to add edge 6 -> 5");
+        g.add_edge_raw (7,5,0).expect ("Failed to add edge 7 -> 5");
+        g.add_edge_raw (5,4,0).expect ("Failed to add edge 5 -> 4");
+
+        let expected_leaves = collections::HashSet::<usize>::from ([3,2,7,6]);
+        let expected_roots = collections::HashSet::<usize>::from ([0,4]);
+
+        assert_eq! (g.leaves (), expected_leaves, "Failed to obtain correct leaves");
+        assert_eq! (g.roots (), expected_roots, "Failed to obtain correct roots");
+
+        let expected_is_leaf = vec![false,false,true,true,false,false,true,true];
+        let expected_is_root = vec![true,false,false,false,true,false,false,false];
+
+        assert_eq! (g.vertices (), &(0..8).collect::<collections::HashSet<usize>> (), "Failed to obtain correct vertex ids");
+        assert_eq! ((0..8).map (|x| g.is_leaf (&x).expect ("Failed to call is_leaf")).collect::<Vec<_>> (), expected_is_leaf, "Failed is_leaf");
+        assert_eq! ((0..8).map (|x| g.is_root (&x).expect ("Failed to call is_root")).collect::<Vec<_>> (), expected_is_root, "Failed is_root");
     }
 
     #[test]
