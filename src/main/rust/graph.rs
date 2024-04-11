@@ -841,16 +841,15 @@ impl LabelledGraph
     }
 
     pub fn edge_attrs (&self, (a, b): (&str, &str))
-        -> Result<( (usize, usize), collections::HashMap::<String, AttributeValue>), crate::error::GraphError>
+        -> Result<( (usize, usize), &collections::HashMap::<String, AttributeValue>), crate::error::GraphError>
     {
         match ( self.vertex_lookup.get (a), self.vertex_lookup.get (b) )
         {
             (Some (a_id), Some (b_id)) => {
-                debug! ("found both vertex ids");
                 match self.edge_attrs.get ( &(*a_id, *b_id) ).ok_or (crate::error::GraphError::EdgeError (format! ("Could not find edge attributes for ({}:{},{}:{})", *a_id, a, *b_id, b)))
                 {
                     Ok (edge_attrs) => {
-                        Ok ( ( (*a_id, *b_id), edge_attrs.clone () ) )
+                        Ok ( ( (*a_id, *b_id), edge_attrs ) )
                     },
                     Err (e) => Err (e)
                 }
@@ -861,7 +860,28 @@ impl LabelledGraph
         }
     }
 
-    pub fn edge_labels (&self, (a_id, b_id): &(usize, usize))
+    pub fn edge_attrs_mut (&mut self, (a, b): (&str, &str))
+        -> Result<( (usize, usize), &mut collections::HashMap::<String, AttributeValue>), crate::error::GraphError>
+    {
+        match ( self.vertex_lookup.get (a), self.vertex_lookup.get (b) )
+        {
+            (Some (a_id), Some (b_id)) => {
+                debug! ("found both vertex ids");
+                match self.edge_attrs.get_mut ( &(*a_id, *b_id) ).ok_or (crate::error::GraphError::EdgeError (format! ("Could not find edge attributes for ({}:{},{}:{})", *a_id, a, *b_id, b)))
+                {
+                    Ok (edge_attrs) => {
+                        Ok ( ( (*a_id, *b_id), edge_attrs ) )
+                    },
+                    Err (e) => Err (e)
+                }
+            },
+            (Some (a_id), None) => Err (crate::error::GraphError::EdgeError (format! ("Found vertex a: {}:{}. Failed to find vertex b: {}", a_id, a, b))),
+            (None, Some (b_id)) => Err (crate::error::GraphError::EdgeError (format! ("failed to find vertex a: {}. Found vertex b: {}:{}", a, b_id, b))),
+            _ => Err (crate::error::GraphError::EdgeError (format! ("failed to find both vertices: {} {}", a, b)))
+        }
+    }
+
+    pub fn edge_label (&self, (a_id, b_id): &(usize, usize))
         -> Result<(String, String), crate::error::GraphError>
     {
         match ( self.vertex_label.get (&a_id), self.vertex_label.get (&b_id) )
@@ -880,6 +900,20 @@ impl LabelledGraph
             (None, Some (b)) => Err (crate::error::GraphError::EdgeError (format! ("failed to find vertex a: {}. Found {} {}", a_id, b_id, b))),
             _ => Err (crate::error::GraphError::EdgeError (format! ("failed to find both vertices: {} {}", a_id, b_id)))
         }
+    }
+
+    pub fn edge_labels (&self)
+        -> Result<collections::HashSet<(String, String)>, crate::error::GraphError>
+    {
+        self.graph ().edges ().keys ().map (|x| {
+            match ( self.vertex_label.get (&x.0), self.vertex_label.get (&x.1) )
+            {
+                (Some (a), Some (b)) => Ok ( (a.clone (), b.clone ()) ),
+                (Some (a), None) => Err (crate::error::GraphError::EdgeError (format! ("Found {} {}. Failed to find vertex b: {}", x.0, a, x.1))),
+                (None, Some (b)) => Err (crate::error::GraphError::EdgeError (format! ("failed to find vertex a: {}. Found {} {}", x.0, x.1, b))),
+                _ => Err (crate::error::GraphError::EdgeError (format! ("failed to find both vertices: {} {}", x.0, x.1)))
+            }
+        }).collect::<Result<collections::HashSet<_>, crate::error::GraphError>> ()
     }
 
     pub fn has_edge (&self, (a, b): (String, String))
@@ -1113,17 +1147,16 @@ impl LabelledUGraph
     }
 
     pub fn edge_attrs (&self, (a, b): (&str, &str))
-        -> Result<( (usize, usize), collections::HashMap::<String, AttributeValue>), crate::error::GraphError>
+        -> Result<( (usize, usize), &collections::HashMap::<String, AttributeValue>), crate::error::GraphError>
     {
         match ( self.vertex_lookup.get (a), self.vertex_lookup.get (b) )
         {
             (Some (a_id), Some (b_id)) => {
-                debug! ("found both vertex ids");
                 let t = if a_id < b_id { (*a_id, *b_id) } else { (*b_id, *a_id) };
                 match self.edge_attrs.get ( &t ).ok_or (crate::error::GraphError::EdgeError (format! ("Could not find edge attributes for ({}:{},{}:{})", *a_id, a, *b_id, b)))
                 {
                     Ok (edge_attrs) => {
-                        Ok ( (t, edge_attrs.clone ()) )
+                        Ok ( (t, edge_attrs) )
                     },
                     Err (e) => Err (e)
                 }
@@ -1134,7 +1167,7 @@ impl LabelledUGraph
         }
     }
 
-    pub fn edge_labels (&self, (a_id, b_id): &(usize, usize))
+    pub fn edge_label (&self, (a_id, b_id): &(usize, usize))
         -> Result<(String, String), crate::error::GraphError>
     {
         match ( self.vertex_label.get (&a_id), self.vertex_label.get (&b_id) )
@@ -1144,6 +1177,20 @@ impl LabelledUGraph
             (None, Some (b)) => Err (crate::error::GraphError::EdgeError (format! ("failed to find vertex a: {}. Found {} {}", a_id, b_id, b))),
             _ => Err (crate::error::GraphError::EdgeError (format! ("failed to find both vertices: {} {}", a_id, b_id)))
         }
+    }
+
+    pub fn edge_labels (&self)
+        -> Result<collections::HashSet<(String, String)>, crate::error::GraphError>
+    {
+        self.graph ().edges ().keys ().map (|x| {
+            match ( self.vertex_label.get (&x.0), self.vertex_label.get (&x.0) )
+            {
+                (Some (a), Some (b)) => Ok ( (a.clone (), b.clone ()) ),
+                (Some (a), None) => Err (crate::error::GraphError::EdgeError (format! ("Found {} {}. Failed to find vertex b: {}", x.0, a, x.1))),
+                (None, Some (b)) => Err (crate::error::GraphError::EdgeError (format! ("failed to find vertex a: {}. Found {} {}", x.0, x.1, b))),
+                _ => Err (crate::error::GraphError::EdgeError (format! ("failed to find both vertices: {} {}", x.0, x.1)))
+            }
+        }).collect::<Result<collections::HashSet<_>, crate::error::GraphError>> ()
     }
 
     pub fn has_edge (&self, (a, b): (String, String))
@@ -1381,10 +1428,10 @@ mod tests
         let va = g.vertex ("a").expect ("Failed to get vertex id for a");
         let vb = g.vertex ("b").expect ("Failed to get vertex id for b");
 
-        let el = g.edge_labels ( &(va, vb) ).expect ("Failed to get edge_labels for a -> b");
+        let el = g.edge_label ( &(va, vb) ).expect ("Failed to get edge_labels for a -> b");
 
         assert_eq! (el, (String::from ("a"), String::from ("b")));
-        assert_eq! (g.edge_labels ( &(vb, va) ).unwrap_err ().to_string (), "Edge error: No edge found between 2 and 1");
+        assert_eq! (g.edge_label ( &(vb, va) ).unwrap_err ().to_string (), "Edge error: No edge found between 2 and 1");
     }
 
     #[test]
@@ -1397,8 +1444,8 @@ mod tests
         let va = g.vertex ("a").expect ("Failed to get vertex id for a");
         let vb = g.vertex ("b").expect ("Failed to get vertex id for b");
 
-        let elf = g.edge_labels ( &(va, vb) ).expect ("Failed to get edge_labels for a -> b");
-        let elr = g.edge_labels ( &(vb, va) ).expect ("Failed to get edge_labels for b -> a");
+        let elf = g.edge_label ( &(va, vb) ).expect ("Failed to get edge_labels for a -> b");
+        let elr = g.edge_label ( &(vb, va) ).expect ("Failed to get edge_labels for b -> a");
 
 
         assert_eq! (elf, (String::from ("a"), String::from ("b")));

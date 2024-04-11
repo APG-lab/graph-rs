@@ -3,6 +3,7 @@ use std::fs;
 use std::io::Write;
 
 pub mod algo;
+pub mod eq;
 pub mod error;
 pub mod graph;
 pub mod sd;
