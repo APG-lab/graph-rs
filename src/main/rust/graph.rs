@@ -33,6 +33,19 @@ impl AttributeValue
         }
     }
 
+    pub fn get_integer_literal (&self)
+    -> i64
+    {
+        if let AttributeValue::IntegerLiteral (val) = *self
+        {
+            val
+        }
+        else
+        {
+            unreachable! ("Must only be called with IntegerLiteral");
+        }
+    }
+
     pub fn get_string_literal (&self)
         -> &String
     {
