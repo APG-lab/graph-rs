@@ -49,7 +49,7 @@ pub fn labels_and_attrs_eq (a: &graph::LabelledGraph, b: &graph::LabelledGraph)
     }
 }
 
-pub fn labels_and_attrs_retain_eq (a: &graph::LabelledGraph, b: &graph::LabelledGraph, retain_vertex_attrs: Option<collections::HashSet<String>>, retain_edge_attrs: Option<collections::HashSet<String>>)
+pub fn labels_and_attrs_retain_eq (a: &graph::LabelledGraph, b: &graph::LabelledGraph, retain_vertex_attrs: Option<&collections::HashSet<String>>, retain_edge_attrs: Option<&collections::HashSet<String>>)
     -> Result<bool, error::GraphError>
 {
     if a.graph ().vertices ().len () == b.graph ().vertices ().len () && a.graph ().edges ().len () == b.graph ().edges ().len ()
@@ -419,7 +419,7 @@ mod tests
         let keep = collections::HashSet::<String>::from ([String::from ("equal")]);
 
         assert! (!super::labels_and_attrs_eq (&a, &b).expect ("Failed eq check"), "Should not be equal");
-        assert! (super::labels_and_attrs_retain_eq (&a, &b, Some (keep), None).expect ("Failed eq check"), "Should be equal");
+        assert! (super::labels_and_attrs_retain_eq (&a, &b, Some (&keep), None).expect ("Failed eq check"), "Should be equal");
     }
 
     #[test]
@@ -450,7 +450,7 @@ mod tests
         let keep = collections::HashSet::<String>::from ([String::from ("equal")]);
 
         assert! (!super::labels_and_attrs_eq (&a, &b).expect ("Failed eq check"), "Should not be equal");
-        assert! (super::labels_and_attrs_retain_eq (&a, &b, None, Some (keep)).expect ("Failed eq check"), "Should be equal");
+        assert! (super::labels_and_attrs_retain_eq (&a, &b, None, Some (&keep)).expect ("Failed eq check"), "Should be equal");
     }
 }
 
