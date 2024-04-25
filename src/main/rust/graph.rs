@@ -170,6 +170,15 @@ impl From<&str> for AttributeValue
     }
 }
 
+impl From<Vec<String>> for AttributeValue
+{
+    fn from (value: Vec<String>)
+        -> Self
+    {
+        AttributeValue::StringArray (value)
+    }
+}
+
 impl From<collections::HashMap<String,String>> for AttributeValue
 {
     fn from (value: collections::HashMap<String,String>)
@@ -933,6 +942,12 @@ impl LabelledGraph
         -> bool
     {
         self.vertex_lookup.contains_key (&a) && self.vertex_lookup.contains_key (&b) && self.graph.edges.contains_key ( &(self.vertex_lookup[&a], self.vertex_lookup[&b]) )
+    }
+
+    pub fn has_vertex (&self, a: &str)
+        -> bool
+    {
+        self.vertex_lookup.contains_key (a)
     }
 
     pub fn relabel_vertex (&mut self, a_id: &usize, vertex_label_next: String)
