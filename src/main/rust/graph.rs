@@ -862,7 +862,7 @@ impl LabelledGraph
         self.graph.edges ()
     }
 
-    pub fn edge_attrs (&self, (a, b): (&str, &str))
+    pub fn edge_attrs (&self, (a, b): &(String, String))
         -> Result<( (usize, usize), &collections::HashMap::<String, AttributeValue>), crate::error::GraphError>
     {
         match ( self.vertex_lookup.get (a), self.vertex_lookup.get (b) )
@@ -882,7 +882,7 @@ impl LabelledGraph
         }
     }
 
-    pub fn edge_attrs_mut (&mut self, (a, b): (&str, &str))
+    pub fn edge_attrs_mut (&mut self, (a, b): &(String, String))
         -> Result<( (usize, usize), &mut collections::HashMap::<String, AttributeValue>), crate::error::GraphError>
     {
         match ( self.vertex_lookup.get (a), self.vertex_lookup.get (b) )
@@ -938,10 +938,10 @@ impl LabelledGraph
         }).collect::<Result<collections::HashSet<_>, crate::error::GraphError>> ()
     }
 
-    pub fn has_edge (&self, (a, b): (String, String))
+    pub fn has_edge (&self, (a, b): &(String, String))
         -> bool
     {
-        self.vertex_lookup.contains_key (&a) && self.vertex_lookup.contains_key (&b) && self.graph.edges.contains_key ( &(self.vertex_lookup[&a], self.vertex_lookup[&b]) )
+        self.vertex_lookup.contains_key (a) && self.vertex_lookup.contains_key (b) && self.graph.edges.contains_key ( &(self.vertex_lookup[a], self.vertex_lookup[b]) )
     }
 
     pub fn has_vertex (&self, a: &str)
@@ -1174,7 +1174,7 @@ impl LabelledUGraph
         self.graph.edges ()
     }
 
-    pub fn edge_attrs (&self, (a, b): (&str, &str))
+    pub fn edge_attrs (&self, (a, b): &(String, String))
         -> Result<( (usize, usize), &collections::HashMap::<String, AttributeValue>), crate::error::GraphError>
     {
         match ( self.vertex_lookup.get (a), self.vertex_lookup.get (b) )
@@ -1221,12 +1221,12 @@ impl LabelledUGraph
         }).collect::<Result<collections::HashSet<_>, crate::error::GraphError>> ()
     }
 
-    pub fn has_edge (&self, (a, b): (String, String))
+    pub fn has_edge (&self, (a, b): &(String, String))
         -> bool
     {
-        if self.vertex_lookup.contains_key (&a) && self.vertex_lookup.contains_key (&b)
+        if self.vertex_lookup.contains_key (a) && self.vertex_lookup.contains_key (b)
         {
-            let t = if self.vertex_lookup[&a] < self.vertex_lookup[&b] { (self.vertex_lookup[&a], self.vertex_lookup[&b]) } else { (self.vertex_lookup[&b], self.vertex_lookup[&a]) };
+            let t = if self.vertex_lookup[a] < self.vertex_lookup[b] { (self.vertex_lookup[a], self.vertex_lookup[b]) } else { (self.vertex_lookup[b], self.vertex_lookup[a]) };
             self.graph.edges.contains_key ( &t )
         }
         else
@@ -1458,6 +1458,7 @@ mod tests
 
         let el = g.edge_label ( &(va, vb) ).expect ("Failed to get edge_labels for a -> b");
 
+        assert! (g.has_edge (&el));
         assert_eq! (el, (String::from ("a"), String::from ("b")));
         assert_eq! (g.edge_label ( &(vb, va) ).unwrap_err ().to_string (), "Edge error: No edge found between 2 and 1");
     }

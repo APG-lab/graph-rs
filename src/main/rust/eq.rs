@@ -18,7 +18,7 @@ pub fn labels_and_attrs_eq (a: &graph::LabelledGraph, b: &graph::LabelledGraph)
                 let vertex_attrs_eq = a.vertex_labels ().iter ().map (|vl| Ok (a.vertex_attrs (&vl)?.1 == b.vertex_attrs (&vl)?.1) ).collect::<Result<Vec<_>, error::GraphError>> ()?;
                 if vertex_attrs_eq.iter ().all (|&x| x)
                 {
-                    let edge_attrs_eq = a.edge_labels ()?.iter ().map (|el| Ok (a.edge_attrs ( (&el.0, &el.1) )?.1 == b.edge_attrs ( (&el.0, &el.1) )?.1) ).collect::<Result<Vec<_>, error::GraphError>> ()?;
+                    let edge_attrs_eq = a.edge_labels ()?.iter ().map (|el| Ok (a.edge_attrs (el)?.1 == b.edge_attrs (el)?.1) ).collect::<Result<Vec<_>, error::GraphError>> ()?;
                     if edge_attrs_eq.iter ().all (|&x| x)
                     {
                         Ok (true)
@@ -87,8 +87,8 @@ pub fn labels_and_attrs_retain_eq (a: &graph::LabelledGraph, b: &graph::Labelled
                         .map (|el| {
                             if let Some (re) = &retain_edge_attrs
                             {
-                                let mut eaa = a.edge_attrs ( (&el.0, &el.1) )?.1.clone ();
-                                let mut eab = b.edge_attrs ( (&el.0, &el.1) )?.1.clone ();
+                                let mut eaa = a.edge_attrs (el)?.1.clone ();
+                                let mut eab = b.edge_attrs (el)?.1.clone ();
 
                                 eaa.retain (|k, _| re.contains (k.as_str ()));
                                 eab.retain (|k, _| re.contains (k.as_str ()));
@@ -97,8 +97,8 @@ pub fn labels_and_attrs_retain_eq (a: &graph::LabelledGraph, b: &graph::Labelled
                             }
                             else
                             {
-                                let eaa = a.edge_attrs ( (&el.0, &el.1) )?.1;
-                                let eab = b.edge_attrs ( (&el.0, &el.1) )?.1;
+                                let eaa = a.edge_attrs (el)?.1;
+                                let eab = b.edge_attrs (el)?.1;
 
                                 Ok ( eaa == eab )
                             }
@@ -351,14 +351,15 @@ mod tests
         b.add_edge (String::from ("vertex_one"), String::from ("vertex_two"), None).expect ("Failed to add edge");
 
         let attrs_a = attrs_a ();
+        let e = ( String::from ("vertex_one"), String::from ("vertex_two") );
 
         for attr_name in vec!["boolean", "bool_map", "integer", "float","string", "string_array", "string_map", "string_set"]
         {
             let mut a_copy = a.clone ();
             let mut b_copy = b.clone ();
 
-            a_copy.edge_attrs_mut ( ("vertex_one", "vertex_two") ).expect ("Failed to get edge_attrs_mut").1.insert (attr_name.to_string (), attrs_a[attr_name].clone ());
-            b_copy.edge_attrs_mut ( ("vertex_one", "vertex_two") ).expect ("Failed to get edge_attrs_mut").1.insert (attr_name.to_string (), attrs_a[attr_name].clone ());
+            a_copy.edge_attrs_mut (&e).expect ("Failed to get edge_attrs_mut").1.insert (attr_name.to_string (), attrs_a[attr_name].clone ());
+            b_copy.edge_attrs_mut (&e).expect ("Failed to get edge_attrs_mut").1.insert (attr_name.to_string (), attrs_a[attr_name].clone ());
 
             assert! (super::labels_and_attrs_eq (&a_copy, &b_copy).expect ("Failed eq check"), "Edge attrs should be equal. Failed '{}'", attr_name);
             assert! (super::labels_and_attrs_retain_eq (&a_copy, &b_copy, None, None).expect ("Failed eq check"), "Edge attrs should be equal. Failed '{}'", attr_name);
@@ -382,14 +383,15 @@ mod tests
 
         let attrs_a = attrs_a ();
         let attrs_b = attrs_b ();
+        let e = ( String::from ("vertex_one"), String::from ("vertex_two") );
 
         for attr_name in vec!["boolean", "bool_map", "integer", "float","string", "string_array", "string_map", "string_set"]
         {
             let mut a_copy = a.clone ();
             let mut b_copy = b.clone ();
 
-            a_copy.edge_attrs_mut ( ("vertex_one", "vertex_two") ).expect ("Failed to get edge_attrs_mut").1.insert (attr_name.to_string (), attrs_a[attr_name].clone ());
-            b_copy.edge_attrs_mut ( ("vertex_one", "vertex_two") ).expect ("Failed to get edge_attrs_mut").1.insert (attr_name.to_string (), attrs_b[attr_name].clone ());
+            a_copy.edge_attrs_mut (&e).expect ("Failed to get edge_attrs_mut").1.insert (attr_name.to_string (), attrs_a[attr_name].clone ());
+            b_copy.edge_attrs_mut (&e).expect ("Failed to get edge_attrs_mut").1.insert (attr_name.to_string (), attrs_b[attr_name].clone ());
 
             assert! (!super::labels_and_attrs_eq (&a_copy, &b_copy).expect ("Failed eq check"), "Edge attrs should not be equal. Failed '{}'", attr_name);
             assert! (!super::labels_and_attrs_retain_eq (&a_copy, &b_copy, None, None).expect ("Failed eq check"), "Edge attrs should not be equal. Failed '{}'", attr_name);
