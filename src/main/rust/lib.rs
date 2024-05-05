@@ -6,6 +6,7 @@ pub mod algo;
 pub mod eq;
 pub mod error;
 pub mod graph;
+pub mod prng;
 pub mod sd;
 
 pub fn graph_to_dot (graph: graph::Graph, file_path: &str)
