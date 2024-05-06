@@ -297,6 +297,12 @@ impl Graph
         Ok (())
     }
 
+    pub fn has_vertex_raw (&self, a: &usize)
+        -> bool
+    {
+        self.vertices.contains (a)
+    }
+
     pub fn has_edge_raw (&self, t: &(usize, usize))
         -> bool
     {
@@ -497,6 +503,8 @@ impl Graph
             self.remove_edge_raw (&v, a)?;
         }
         self.vertices.remove (a);
+        self.inbound.remove (a);
+        self.outbound.remove (a);
         Ok (())
     }
 
@@ -681,6 +689,7 @@ impl UGraph
             self.remove_edge_raw (a, &v)?;
         }
         self.vertices.remove (a);
+        self.connected.remove (a);
         Ok (())
     }
 
@@ -744,8 +753,9 @@ impl LabelledGraph
         else
         {
             // Check that we didn't already add the vertices
-            let a_id = if self.vertex_lookup.contains_key (&a) { self.vertex_lookup[&a] } else { self.add_vertex (a, None)? };
+            // create b before a for nice vertex ids
             let b_id = if self.vertex_lookup.contains_key (&b) { self.vertex_lookup[&b] } else { self.add_vertex (b, None)? };
+            let a_id = if self.vertex_lookup.contains_key (&a) { self.vertex_lookup[&a] } else { self.add_vertex (a, None)? };
             self.graph.add_edge_raw (a_id, b_id, 0)?;
             if let Some (edge_attrs) = attrs
             {
@@ -888,7 +898,6 @@ impl LabelledGraph
         match ( self.vertex_lookup.get (a), self.vertex_lookup.get (b) )
         {
             (Some (a_id), Some (b_id)) => {
-                debug! ("found both vertex ids");
                 match self.edge_attrs.get_mut ( &(*a_id, *b_id) ).ok_or (crate::error::GraphError::EdgeError (format! ("Could not find edge attributes for ({}:{},{}:{})", *a_id, a, *b_id, b)))
                 {
                     Ok (edge_attrs) => {
@@ -968,23 +977,63 @@ impl LabelledGraph
         }
     }
 
-    pub fn remove_vertex (&mut self, a_id: &usize)
+    pub fn remove_edge (&mut self, (a, b): &(String, String))
         -> Result<(), crate::error::GraphError>
     {
-        let vertex_label = self.vertex_label.get (a_id).cloned ().ok_or (crate::error::GraphError::VertexError (format! ("vertex {} not found in graph", a_id)))?;
-
-        if self.graph.neighbours (a_id)?.is_empty ()
+        match ( self.has_vertex (&a), self.has_vertex (&b) )
         {
-            self.vertex_lookup.remove (&vertex_label);
-            self.vertex_label.remove (a_id);
-            self.vertex_attrs.remove (a_id);
-            self.graph.remove_vertex_raw (a_id)?;
+            (true, true) => {
+                let er = ( self.vertex (&a)?, self.vertex (&b)? );
+                self.edge_attrs.remove (&er);
+                self.graph.remove_edge_raw (&er.0, &er.1)?;
+                Ok (())
+            },
+            (true, false) => Err (crate::error::GraphError::EdgeError (format! ("Found {}. Failed to find vertex b: {}", a, b))),
+            (false, true) => Err (crate::error::GraphError::EdgeError (format! ("failed to find vertex a: {}. Found {}", a, b))),
+            _ => Err (crate::error::GraphError::EdgeError (format! ("failed to find both vertices: {} {}", a, b)))
+        }
+    }
+
+    pub fn remove_vertex (&mut self, a: &str)
+        -> Result<(), crate::error::GraphError>
+    {
+        let a_id = self.vertex (a)?;
+        if self.graph.neighbours (&a_id)?.is_empty ()
+        {
+            self.vertex_lookup.remove (a);
+            self.vertex_label.remove (&a_id);
+            self.vertex_attrs.remove (&a_id);
+            self.graph.remove_vertex_raw (&a_id)?;
             Ok (())
         }
         else
         {
-            Err (crate::error::GraphError::VertexError (format! ("Cannot delete vertex {} with edges", a_id)))
+            Err (crate::error::GraphError::VertexError (format! ("Cannot delete vertex {} with edges", a)))
         }
+    }
+
+    pub fn retain (&mut self, vertices_retain: &collections::HashSet<usize>)
+        -> Result<(), crate::error::GraphError>
+    {
+        for vd in self.graph.vertices () - vertices_retain
+        {
+            let vdl = self.vertex_label.get (&vd).cloned ().ok_or (crate::error::GraphError::VertexError (format! ("vertex {} not found in graph", vd)))?;
+
+            for vi in self.graph.inbound (&vd)?.iter ()
+            {
+                let vil = self.vertex_label.get (vi).cloned ().ok_or (crate::error::GraphError::VertexError (format! ("vertex {} not found in graph", vi)))?;
+                self.remove_edge ( &(vil, vdl.clone ()) )?;
+            }
+
+            for vo in self.graph.outbound (&vd)?.iter ()
+            {
+                let vol = self.vertex_label.get (vo).cloned ().ok_or (crate::error::GraphError::VertexError (format! ("vertex {} not found in graph", vo)))?;
+                self.remove_edge ( &(vdl.clone (), vol) )?;
+            }
+
+            self.remove_vertex (&vdl)?;
+        }
+        Ok (())
     }
 }
 
@@ -1235,6 +1284,12 @@ impl LabelledUGraph
         }
     }
 
+    pub fn has_vertex (&self, a: &str)
+        -> bool
+    {
+        self.vertex_lookup.contains_key (a)
+    }
+
     pub fn relabel_vertex (&mut self, a_id: &usize, vertex_label_next: String)
         -> Result<(), crate::error::GraphError>
     {
@@ -1253,17 +1308,34 @@ impl LabelledUGraph
         }
     }
 
-    pub fn remove_vertex (&mut self, a_id: &usize)
+    pub fn remove_edge (&mut self, (a, b): &(String, String))
         -> Result<(), crate::error::GraphError>
     {
-        let vertex_label = self.vertex_label.get (a_id).cloned ().ok_or (crate::error::GraphError::VertexError (format! ("vertex {} not found in graph", a_id)))?;
-
-        if self.graph.neighbours (a_id)?.is_empty ()
+        match ( self.has_vertex (&a), self.has_vertex (&b) )
         {
-            self.vertex_lookup.remove (&vertex_label);
-            self.vertex_label.remove (a_id);
-            self.vertex_attrs.remove (a_id);
-            self.graph.remove_vertex_raw (a_id)?;
+            (true, true) => {
+                let er = ( self.vertex (&a)?, self.vertex (&b)? );
+                self.edge_attrs.remove (&er);
+                self.graph.remove_edge_raw (&er.0, &er.1)?;
+                Ok (())
+            },
+            (true, false) => Err (crate::error::GraphError::EdgeError (format! ("Found {}. Failed to find vertex b: {}", a, b))),
+            (false, true) => Err (crate::error::GraphError::EdgeError (format! ("failed to find vertex a: {}. Found {}", a, b))),
+            _ => Err (crate::error::GraphError::EdgeError (format! ("failed to find both vertices: {} {}", a, b)))
+        }
+    }
+
+    pub fn remove_vertex (&mut self, a: &str)
+        -> Result<(), crate::error::GraphError>
+    {
+        let a_id = self.vertex (a)?;
+
+        if self.graph.neighbours (&a_id)?.is_empty ()
+        {
+            self.vertex_lookup.remove (a);
+            self.vertex_label.remove (&a_id);
+            self.vertex_attrs.remove (&a_id);
+            self.graph.remove_vertex_raw (&a_id)?;
             Ok (())
         }
         else
@@ -1423,6 +1495,20 @@ mod tests
     }
 
     #[test]
+    fn test_has_vertex_raw ()
+    {
+        init ();
+        let mut g = Graph::new ();
+
+        let r_before = g.has_vertex_raw (&2);
+        g.add_vertex_raw (2).expect ("Failed to add vertex");
+        let r_after = g.has_vertex_raw (&2);
+
+        assert_eq! (r_before, false, "Should not have vertex yet");
+        assert_eq! (r_after, true, "Should have vertex");
+    }
+
+    #[test]
     fn test_has_edge_raw ()
     {
         init ();
@@ -1451,16 +1537,16 @@ mod tests
     {
         init ();
         let mut g = LabelledGraph::new ();
-        g.add_edge (String::from ("a"), String::from ("b"), None).expect ("Failed to add edge a -> b");
+        g.add_edge (String::from ("b"), String::from ("a"), None).expect ("Failed to add edge b -> a");
 
         let va = g.vertex ("a").expect ("Failed to get vertex id for a");
         let vb = g.vertex ("b").expect ("Failed to get vertex id for b");
 
-        let el = g.edge_label ( &(va, vb) ).expect ("Failed to get edge_labels for a -> b");
+        let el = g.edge_label ( &(vb, va) ).expect ("Failed to get edge_labels for b -> a");
 
         assert! (g.has_edge (&el));
-        assert_eq! (el, (String::from ("a"), String::from ("b")));
-        assert_eq! (g.edge_label ( &(vb, va) ).unwrap_err ().to_string (), "Edge error: No edge found between 2 and 1");
+        assert_eq! (el, (String::from ("b"), String::from ("a")));
+        assert_eq! (g.edge_label ( &(va, vb) ).unwrap_err ().to_string (), "Edge error: No edge found between 1 and 2");
     }
 
     #[test]
@@ -1468,17 +1554,64 @@ mod tests
     {
         init ();
         let mut g = LabelledUGraph::new ();
-        g.add_edge (String::from ("a"), String::from ("b"), None).expect ("Failed to add edge a -> b");
+        g.add_edge (String::from ("b"), String::from ("a"), None).expect ("Failed to add edge b -> a");
 
         let va = g.vertex ("a").expect ("Failed to get vertex id for a");
         let vb = g.vertex ("b").expect ("Failed to get vertex id for b");
 
-        let elf = g.edge_label ( &(va, vb) ).expect ("Failed to get edge_labels for a -> b");
-        let elr = g.edge_label ( &(vb, va) ).expect ("Failed to get edge_labels for b -> a");
+        let elf = g.edge_label ( &(vb, va) ).expect ("Failed to get edge_labels for b -> a");
+        let elr = g.edge_label ( &(va, vb) ).expect ("Failed to get edge_labels for a -> b");
 
+        assert_eq! (elf, (String::from ("b"), String::from ("a")));
+        assert_eq! (elr, (String::from ("a"), String::from ("b")));
+    }
 
-        assert_eq! (elf, (String::from ("a"), String::from ("b")));
-        assert_eq! (elr, (String::from ("b"), String::from ("a")));
+    #[test]
+    fn test_remove_edge_labelled ()
+    {
+        init ();
+        let mut g = LabelledGraph::new ();
+        g.add_edge (String::from ("a"), String::from ("b"), None).expect ("Failed to add edge a -> b");
+        let e = ( String::from ("a"), String::from ("b") );
+        g.remove_edge (&e).expect ("Failed to remove edge");
+    }
+
+    #[test]
+    fn test_remove_edge_labelled_u ()
+    {
+        init ();
+        let mut g = LabelledUGraph::new ();
+        g.add_edge (String::from ("a"), String::from ("b"), None).expect ("Failed to add edge a -> b");
+        let e = ( String::from ("a"), String::from ("b") );
+        g.remove_edge (&e).expect ("Failed to remove edge");
+    }
+
+    #[test]
+    fn test_retain_labelled ()
+    {
+        init ();
+        let mut g = LabelledGraph::new ();
+        //   a
+        //   |
+        //   b
+        //  / \
+        // c   d
+        g.add_edge (String::from ("b"), String::from ("a"), None).expect ("Failed to add edge b -> a");
+        g.add_edge (String::from ("c"), String::from ("b"), None).expect ("Failed to add edge c -> b");
+        g.add_edge (String::from ("d"), String::from ("b"), None).expect ("Failed to add edge d -> b");
+
+        assert_eq! (g.graph ().vertices (), &(1..5).collect::<collections::HashSet<_>> ());
+
+        let vertex_labels_expected = ["a","b","c","d"].into_iter ().map (String::from).collect::<Vec<_>> ();
+        let vertex_labels = (1..5).map (|x| g.vertex_label (&x).expect (&format! ("Failed to find vertex '{}'", x))).collect::<Vec<_>> ();
+
+        assert_eq! (vertex_labels, vertex_labels_expected);
+
+        let retain = collections::HashSet::<usize>::from ([1,3,4]);
+        let mut rg = g.clone ();
+        rg.retain (&retain).expect ("Failed retain");
+
+        assert_eq! (rg.edges (), &collections::HashMap::<(usize,usize), i64>::new ());
     }
 
     #[test]
