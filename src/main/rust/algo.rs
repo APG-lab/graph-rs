@@ -22,7 +22,7 @@ pub fn bfs_edges<G: graph::GraphAny> (g: &G, source: usize)
 
     while let Some ( (parent, current_depth ) ) = queue.front ()
     {
-        if let Some (child) = neighbours_iters.get_mut (parent).ok_or (error::GraphError::AlgorithmError (format! ("No neigbours iter for {}", parent)))?.next ()
+        if let Some (child) = neighbours_iters.get_mut (parent).ok_or (error::GraphError::AlgorithmError (format! ("No neighbours iter for {}", parent)))?.next ()
         {
             if !visited.contains (child)
             {
@@ -178,6 +178,7 @@ pub fn topological_sort (g: &graph::Graph)
             }
         }
     }
+
     if gc.edges ().is_empty ()
     {
         Ok (r)
@@ -193,7 +194,6 @@ mod tests
 {
     use std::collections;
     use super::*;
-
     use std::sync;
 
     static INIT: sync::Once = sync::Once::new ();
@@ -208,10 +208,32 @@ mod tests
     {
         init ();
         let mut g = graph::Graph::new ();
+        //               1
+        //              * *
+        //             /   \
+        //            2     3
         g.add_edge_raw (2,1,0).expect ("Failed to add edge 2 -> 1");
         g.add_edge_raw (3,1,0).expect ("Failed to add edge 3 -> 1");
 
         let solutions = collections::HashSet::from ([vec![2,3,1], vec![3,2,1]]);
+        let r = topological_sort (&g).unwrap ();
+        assert! (solutions.contains (&r), "{:?} not found in {:?}", r, solutions);
+    }
+
+    #[test]
+    fn test_topo_sort_linear ()
+    {
+        init ();
+        let mut g = graph::Graph::new ();
+        //               1
+        //              * \
+        //             /   *
+        //            2     3
+
+        g.add_edge_raw (1,3,0).expect ("Failed to add edge 1 -> 3");
+        g.add_edge_raw (2,1,0).expect ("Failed to add edge 2 -> 1");
+
+        let solutions = collections::HashSet::from ([vec![2,1,3]]);
         let r = topological_sort (&g).unwrap ();
         assert! (solutions.contains (&r), "{:?} not found in {:?}", r, solutions);
     }

@@ -452,6 +452,10 @@ impl Graph
                 {
                     errors.push (format! ("remove_edge_raw: {} had no inbound edge from {}", b, a));
                 }
+                if inbound_b.is_empty ()
+                {
+                    self.inbound.remove (b);
+                }
             }
             else
             {
@@ -467,6 +471,10 @@ impl Graph
                 else
                 {
                     errors.push (format! ("remove_edge_raw: {} had no outbound edge to {}", a, b));
+                }
+                if outbound_a.is_empty ()
+                {
+                    self.outbound.remove (a);
                 }
             }
             else
@@ -512,6 +520,16 @@ impl Graph
         -> collections::HashSet <usize>
     {
         self.vertices.iter ().filter (|x| !self.outbound.contains_key (x)).copied ().collect::<collections::HashSet::<usize>> ()
+    }
+
+    pub fn retain (&mut self, vertices_retain: &collections::HashSet<usize>)
+        -> Result<(), crate::error::GraphError>
+    {
+        for vd in self.vertices () - vertices_retain
+        {
+            self.remove_vertex_raw (&vd)?;
+        }
+        Ok (())
     }
 
     pub fn vertices (&self)
@@ -1018,21 +1036,20 @@ impl LabelledGraph
         for vd in self.graph.vertices () - vertices_retain
         {
             let vdl = self.vertex_label.get (&vd).cloned ().ok_or (crate::error::GraphError::VertexError (format! ("vertex {} not found in graph", vd)))?;
+            self.vertex_lookup.remove (&vdl);
+            self.vertex_label.remove (&vd);
+            self.vertex_attrs.remove (&vd);
 
-            for vi in self.graph.inbound (&vd)?.iter ()
+            for vdi in self.graph.inbound (&vd)?
             {
-                let vil = self.vertex_label.get (vi).cloned ().ok_or (crate::error::GraphError::VertexError (format! ("vertex {} not found in graph", vi)))?;
-                self.remove_edge ( &(vil, vdl.clone ()) )?;
+                self.edge_attrs.remove ( &(vdi, vd) );
             }
-
-            for vo in self.graph.outbound (&vd)?.iter ()
+            for vdo in self.graph.outbound (&vd)?
             {
-                let vol = self.vertex_label.get (vo).cloned ().ok_or (crate::error::GraphError::VertexError (format! ("vertex {} not found in graph", vo)))?;
-                self.remove_edge ( &(vdl.clone (), vol) )?;
+                self.edge_attrs.remove ( &(vd, vdo) );
             }
-
-            self.remove_vertex (&vdl)?;
         }
+        self.graph.retain (vertices_retain)?;
         Ok (())
     }
 }
@@ -1587,6 +1604,31 @@ mod tests
     }
 
     #[test]
+    fn test_retain ()
+    {
+        init ();
+        let mut g = Graph::new ();
+        //   1
+        //   |
+        //   2
+        //  / \
+        // 3   4
+        g.add_edge_raw (2, 1, 0).expect ("Failed to add edge 2 -> 1");
+        g.add_edge_raw (3, 2, 0).expect ("Failed to add edge 3 -> 2");
+        g.add_edge_raw (4, 2, 0).expect ("Failed to add edge 4 -> 2");
+
+        assert_eq! (g.vertices (), &(1..5).collect::<collections::HashSet<_>> ());
+
+        let retain = collections::HashSet::<usize>::from ([1,3,4]);
+        let mut rg = g.clone ();
+        rg.retain (&retain).expect ("Failed retain");
+
+        assert_eq! (rg.leaves (), collections::HashSet::<usize>::from ([1,3,4]));
+        assert_eq! (rg.roots (), collections::HashSet::<usize>::from ([1,3,4]));
+        assert_eq! (rg.edges (), &collections::HashMap::<(usize,usize), i64>::new ());
+    }
+
+    #[test]
     fn test_retain_labelled ()
     {
         init ();
@@ -1611,6 +1653,13 @@ mod tests
         let mut rg = g.clone ();
         rg.retain (&retain).expect ("Failed retain");
 
+        let vertex_labels_retained_expected = ["a","c","d"].into_iter ().map (String::from).collect::<Vec<_>> ();
+        let vertex_labels_retained = vec![1,3,4].iter ().map (|x| rg.vertex_label (&x).expect (&format! ("Failed to find vertex '{}'", x))).collect::<Vec<_>> ();
+
+        assert_eq! (vertex_labels_retained, vertex_labels_retained_expected);
+
+        assert_eq! (rg.graph ().leaves (), collections::HashSet::<usize>::from ([1,3,4]));
+        assert_eq! (rg.graph ().roots (), collections::HashSet::<usize>::from ([1,3,4]));
         assert_eq! (rg.edges (), &collections::HashMap::<(usize,usize), i64>::new ());
     }
 
