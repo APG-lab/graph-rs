@@ -1372,12 +1372,19 @@ impl PartialEq for LabelledUGraph
 
 pub trait GraphAny
 {
+    fn has_edge_raw (&self, ev: &(usize, usize)) -> bool;
     fn neighbours (&self, a: &usize) -> Result<collections::HashSet<usize>, crate::error::GraphError>;
     fn vertices (&self) -> &collections::HashSet <usize>;
 }
 
 impl GraphAny for Graph
 {
+    fn has_edge_raw (&self, ev: &(usize, usize))
+        -> bool
+    {
+        self.has_edge_raw (ev)
+    }
+
     fn neighbours (&self, a: &usize)
         -> Result<collections::HashSet<usize>, crate::error::GraphError>
     {
@@ -1393,6 +1400,12 @@ impl GraphAny for Graph
 
 impl GraphAny for UGraph
 {
+    fn has_edge_raw (&self, ev: &(usize, usize))
+        -> bool
+    {
+        self.has_edge_raw (ev)
+    }
+
     fn neighbours (&self, a: &usize)
         -> Result<collections::HashSet<usize>, crate::error::GraphError>
     {

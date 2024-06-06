@@ -1,4 +1,5 @@
 
+//use log::debug;
 use crate::error;
 use crate::graph;
 use crate::prng;
@@ -37,6 +38,77 @@ pub fn bfs_edges<G: graph::GraphAny> (g: &G, source: usize)
         }
     }
 
+    Ok (r)
+}
+
+pub fn edge_bfs<G: graph::GraphAny> (g: &G, source: usize)
+    -> Result<Vec<(usize, usize)>, error::GraphError>
+{
+    let neighbours = g.vertices ().iter ().fold (collections::HashMap::<usize, collections::HashSet<usize>>::new (), |mut acc, item| {
+        acc.insert (*item, g.neighbours (item).unwrap ());
+        acc
+        });
+    let mut neighbours_iters = neighbours.iter ().fold (collections::HashMap::<usize, collections::hash_set::Iter<'_, usize>>::new (), |mut acc, (k, v)| {
+        acc.insert (*k, v.iter () );
+        acc
+    });
+
+    let mut visited_vertices = collections::HashSet::<usize>::from ([source]);
+    let mut visited_edges = collections::HashSet::<(usize, usize)>::new ();
+    let mut r = Vec::<(usize, usize)>::new ();
+
+    let source_edges = neighbours_iters.get_mut (&source)
+        .ok_or (error::GraphError::AlgorithmError (format! ("No neighbours iter for {}", source)))?
+        .map (|x| {
+            let ex = (source, *x);
+            if g.has_edge_raw (&ex) { ex } else { (ex.1, ex.0) }
+        })
+        .collect::<collections::HashSet<(usize,usize)>> ();
+    let mut queue = collections::VecDeque::<(usize, collections::HashSet<(usize, usize)>)>::from (vec![(source, source_edges)]);
+
+    while let Some ( (parent, edges) ) = queue.pop_front ()
+    {
+        //debug! ("parent: {} edges: {:?}", parent, edges);
+        for ev in edges
+        {
+            if parent == ev.0
+            {
+                if !visited_vertices.contains (&ev.1)
+                {
+                    visited_vertices.insert (ev.1);
+                    let child_edges = neighbours_iters.get_mut (&ev.1)
+                        .ok_or (error::GraphError::AlgorithmError (format! ("No neighbours iter for {}", ev.1)))?
+                        .map (|x| {
+                            let ex = (ev.1, *x);
+                            if g.has_edge_raw (&ex) { ex } else { (ex.1, ex.0) }
+                        })
+                        .collect::<collections::HashSet<(usize,usize)>> ();
+                    queue.push_back ( (ev.1, child_edges) );
+                }
+            }
+            else
+            {
+                if !visited_vertices.contains (&ev.0)
+                {
+                    visited_vertices.insert (ev.0);
+                    let child_edges = neighbours_iters.get_mut (&ev.0)
+                        .ok_or (error::GraphError::AlgorithmError (format! ("No neighbours iter for {}", ev.0)))?
+                        .map (|x| {
+                            let ex = (ev.0, *x);
+                            if g.has_edge_raw (&ex) { ex } else { (ex.1, ex.0) }
+                        })
+                        .collect::<collections::HashSet<(usize,usize)>> ();
+                    queue.push_back ( (ev.0, child_edges) );
+                }
+            }
+
+            if !visited_edges.contains (&ev)
+            {
+                visited_edges.insert (ev);
+                r.push (ev);
+            }
+        }
+    }
     Ok (r)
 }
 
@@ -272,6 +344,64 @@ mod tests
     }
 
     #[test]
+    fn test_edge_bfs ()
+    {
+        init ();
+        let mut g = graph::Graph::new ();
+        //       1
+        //      / \
+        //     /   \
+        //    /     \
+        //   2       3
+        //  / \     / \
+        // 4   5   6   7
+        g.add_edge_raw (2,1,0).expect ("Failed to add edge 2 -> 1");
+        g.add_edge_raw (3,1,0).expect ("Failed to add edge 3 -> 1");
+        g.add_edge_raw (4,2,0).expect ("Failed to add edge 4 -> 2");
+        g.add_edge_raw (5,2,0).expect ("Failed to add edge 5 -> 2");
+        g.add_edge_raw (6,3,0).expect ("Failed to add edge 6 -> 3");
+        g.add_edge_raw (7,3,0).expect ("Failed to add edge 7 -> 3");
+
+        let solutions = collections::HashSet::from ([
+                                                    vec![(2,1), (3,1), (4,2), (5,2), (6,3), (7,3)],
+                                                    vec![(2,1), (3,1), (4,2), (5,2), (7,3), (6,3)],
+                                                    vec![(2,1), (3,1), (5,2), (4,2), (6,3), (7,3)],
+                                                    vec![(2,1), (3,1), (5,2), (4,2), (7,3), (6,3)],
+                                                    vec![(3,1), (2,1), (6,3), (7,3), (4,2), (5,2)],
+                                                    vec![(3,1), (2,1), (6,3), (7,3), (5,2), (4,2)],
+                                                    vec![(3,1), (2,1), (7,3), (6,3), (4,2), (5,2)],
+                                                    vec![(3,1), (2,1), (7,3), (6,3), (5,2), (4,2)]
+            ]);
+
+        let r = edge_bfs (&g, 1).unwrap ();
+        assert! (solutions.contains (&r), "{:?} not found in {:?}", r, solutions);
+    }
+
+    #[test]
+    fn test_edge_bfs_all_edges ()
+    {
+        init ();
+        let mut g = graph::Graph::new ();
+        // 1
+        // |
+        // *
+        // 2
+        // *
+        // *
+        // 3
+        g.add_edge_raw (2,1,0).expect ("Failed to add edge 2 -> 1");
+        g.add_edge_raw (3,2,0).expect ("Failed to add edge 3 -> 2");
+        g.add_edge_raw (2,3,0).expect ("Failed to add edge 2 -> 3");
+
+        let solutions = collections::HashSet::from ([
+                                                    vec![(2,1), (2,3), (3,2)]
+            ]);
+
+        let r = edge_bfs (&g, 1).unwrap ();
+        assert! (solutions.contains (&r), "{:?} not found in {:?}", r, solutions);
+    }
+
+    #[test]
     fn test_connected_components ()
     {
         init ();
@@ -314,6 +444,7 @@ mod tests
         g.add_edge_raw (7,3,0).expect ("Failed to add edge 7 -> 3");
 
         let solutions = Vec::from ([
+            Vec::from ([ collections::HashSet::<usize>::from ([1,2,3,4,5,6,7]) ]),
             Vec::from ([ collections::HashSet::<usize>::from ([1,2,4,5]), collections::HashSet::<usize>::from ([3,6,7]) ]),
             Vec::from ([ collections::HashSet::<usize>::from ([1,3,6,7]), collections::HashSet::<usize>::from ([2,4,5]) ])
         ]);
@@ -326,7 +457,7 @@ mod tests
         assert_eq! ((1..8).collect::<collections::HashSet<_>> (), nl.keys ().copied ().collect::<collections::HashSet<_>> ());
         assert! (nl.values ().all (|x| ln.contains_key (x)));
         assert! (nl.iter ().all (|(n,l)| ln[l].contains (n)));
-        assert! (solutions.contains (&r));
+        assert! (solutions.contains (&r), "{:?} not found in solutions", r);
     }
 
     #[test]
