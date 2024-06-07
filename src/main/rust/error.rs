@@ -13,6 +13,9 @@ pub enum GraphError
     #[error("Conversion error: {0}")]
     ConversionError (String),
 
+    #[error("Data error: {0}")]
+    DataError (String),
+
     #[error("Edge error: {0}")]
     EdgeError (String),
 

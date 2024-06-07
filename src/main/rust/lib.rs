@@ -9,6 +9,53 @@ pub mod graph;
 pub mod prng;
 pub mod sd;
 
+pub fn base_graph (gv: &Vec<graph::LabelledGraph>)
+    -> Result<&graph::LabelledGraph, error::GraphError>
+{
+    if let Some (maybe_base_graph) = gv.last ()
+    {
+        if maybe_base_graph.graph ().name () == ""
+        {
+            Ok (maybe_base_graph)
+        }
+        else
+        {
+            Err (error::GraphError::DataError (String::from ("The last graph in the graph vector must be unnamed to be the base graph.")))
+        }
+    }
+    else
+    {
+        Err (error::GraphError::DataError (String::from ("No graphs found")))
+    }
+}
+
+pub fn last_graph (gv: &Vec<graph::LabelledGraph>)
+    -> Result<&graph::LabelledGraph, error::GraphError>
+{
+    if let Some (maybe_base_graph) = gv.last ()
+    {
+        Ok (maybe_base_graph)
+    }
+    else
+    {
+        Err (error::GraphError::DataError (String::from ("No graphs found")))
+    }
+}
+
+pub fn named_graph<'a> (gv: &'a Vec<graph::LabelledGraph>, graph_name: &str)
+    -> Result<&'a graph::LabelledGraph, error::GraphError>
+{
+    if let Some (maybe_base_graph) = gv.iter ()
+        .find (|x| x.graph ().name () == graph_name)
+    {
+        Ok (maybe_base_graph)
+    }
+    else
+    {
+        Err (error::GraphError::DataError (String::from ("No graphs found")))
+    }
+}
+
 pub fn graph_to_dot (graph: graph::Graph, file_path: &str)
     -> Result<(), error::GraphError>
 {
