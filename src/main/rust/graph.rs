@@ -1035,6 +1035,11 @@ impl LabelledGraph
         }
     }
 
+    pub fn rename (&mut self, name: String)
+    {
+        self.graph.rename (name);
+    }
+
     pub fn retain (&mut self, vertices_retain: &collections::HashSet<usize>)
         -> Result<(), crate::error::GraphError>
     {
