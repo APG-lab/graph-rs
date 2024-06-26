@@ -516,6 +516,11 @@ impl Graph
         Ok (())
     }
 
+    pub fn rename (&mut self, name: String)
+    {
+        self.name = name;
+    }
+
     pub fn roots (&self)
         -> collections::HashSet <usize>
     {
