@@ -245,12 +245,12 @@ pub struct LabelledGraph
 #[derive(Clone,Debug,Deserialize,Serialize,PartialEq)]
 pub struct UGraph
 {
-    name: String,
-    vertices: collections::HashSet <usize>,
+    pub (crate) name: String,
+    pub (crate) vertices: collections::HashSet <usize>,
     #[serde(with="crate::sd::key_pair_usize")]
-    edges: collections::HashMap <(usize,usize), i64>,
+    pub (crate) edges: collections::HashMap <(usize,usize), i64>,
     #[serde(with="crate::sd::key_usize")]
-    connected: collections::HashMap <usize, collections::HashSet <usize>>,
+    pub (crate) connected: collections::HashMap <usize, collections::HashSet <usize>>,
 }
 
 #[derive(Clone,Debug,Deserialize,Serialize)]
@@ -768,6 +768,12 @@ impl LabelledGraph
     pub fn add_edge (&mut self, a: String, b: String, attrs: Option<collections::HashMap::<String, AttributeValue>>)
         -> Result<(usize, usize), crate::error::GraphError>
     {
+        self.add_edge_weighted (a, b, attrs, 0)
+    }
+
+    pub fn add_edge_weighted (&mut self, a: String, b: String, attrs: Option<collections::HashMap::<String, AttributeValue>>, weight: i64)
+        -> Result<(usize, usize), crate::error::GraphError>
+    {
         debug! ("add {} to {}", a , b);
         if a == b
         {
@@ -779,7 +785,7 @@ impl LabelledGraph
             // create b before a for nice vertex ids
             let b_id = if self.vertex_lookup.contains_key (&b) { self.vertex_lookup[&b] } else { self.add_vertex (b, None)? };
             let a_id = if self.vertex_lookup.contains_key (&a) { self.vertex_lookup[&a] } else { self.add_vertex (a, None)? };
-            self.graph.add_edge_raw (a_id, b_id, 0)?;
+            self.graph.add_edge_raw (a_id, b_id, weight)?;
             if let Some (edge_attrs) = attrs
             {
                 self.edge_attrs.insert ((a_id, b_id), edge_attrs);
@@ -1117,6 +1123,12 @@ impl LabelledUGraph
     pub fn add_edge (&mut self, a: String, b: String, attrs: Option<collections::HashMap::<String, AttributeValue>>)
         -> Result<(usize, usize), crate::error::GraphError>
     {
+        self.add_edge_weighted (a, b, attrs, 0)
+    }
+
+    pub fn add_edge_weighted (&mut self, a: String, b: String, attrs: Option<collections::HashMap::<String, AttributeValue>>, weight: i64)
+        -> Result<(usize, usize), crate::error::GraphError>
+    {
         debug! ("add {} to {}", a , b);
         if a == b
         {
@@ -1127,7 +1139,7 @@ impl LabelledUGraph
             // Check that we didn't already add the vertices
             let a_id = if self.vertex_lookup.contains_key (&a) { self.vertex_lookup[&a] } else { self.add_vertex (a, None)? };
             let b_id = if self.vertex_lookup.contains_key (&b) { self.vertex_lookup[&b] } else { self.add_vertex (b, None)? };
-            self.graph.add_edge_raw (a_id, b_id, 0)?;
+            self.graph.add_edge_raw (a_id, b_id, weight)?;
             if let Some (edge_attrs) = attrs
             {
                 self.edge_attrs.insert ((a_id, b_id), edge_attrs);
@@ -1382,13 +1394,21 @@ impl PartialEq for LabelledUGraph
 
 pub trait GraphAny
 {
+    fn adjacent (&self, a: &usize) -> Result<collections::HashSet<usize>, crate::error::GraphError>;
     fn has_edge_raw (&self, ev: &(usize, usize)) -> bool;
     fn neighbours (&self, a: &usize) -> Result<collections::HashSet<usize>, crate::error::GraphError>;
     fn vertices (&self) -> &collections::HashSet <usize>;
+    fn weight (&self, ev: &(usize, usize)) -> Result<i64, crate::error::GraphError>;
 }
 
 impl GraphAny for Graph
 {
+    fn adjacent (&self, a: &usize)
+        -> Result<collections::HashSet<usize>, crate::error::GraphError>
+    {
+        self.outbound (a)
+    }
+
     fn has_edge_raw (&self, ev: &(usize, usize))
         -> bool
     {
@@ -1405,11 +1425,23 @@ impl GraphAny for Graph
         -> &collections::HashSet<usize>
     {
         self.vertices ()
+    }
+
+    fn weight (&self, ev: &(usize, usize))
+        -> Result<i64, crate::error::GraphError>
+    {
+        self.edges ().get (ev).copied ().ok_or (crate::error::GraphError::EdgeError (format! ("No edge found for {:?}", ev)))
     }
 }
 
 impl GraphAny for UGraph
 {
+    fn adjacent (&self, a: &usize)
+        -> Result<collections::HashSet<usize>, crate::error::GraphError>
+    {
+        self.neighbours (a)
+    }
+
     fn has_edge_raw (&self, ev: &(usize, usize))
         -> bool
     {
@@ -1426,6 +1458,13 @@ impl GraphAny for UGraph
         -> &collections::HashSet<usize>
     {
         self.vertices ()
+    }
+
+    fn weight (&self, ev: &(usize, usize))
+        -> Result<i64, crate::error::GraphError>
+    {
+        let t = if ev.0 < ev.1 { (ev.0, ev.1) } else { (ev.1, ev.0) };
+        self.edges ().get (&t).copied ().ok_or (crate::error::GraphError::EdgeError (format! ("No edge found for {:?}", ev)))
     }
 }
 

@@ -3,14 +3,45 @@
 use crate::error;
 use crate::graph;
 use crate::prng;
+use std::cmp;
 use std::collections;
 use std::iter;
+
+#[derive(Copy, Clone, Eq, PartialEq)]
+struct MultiSourceState
+{
+    cost: i64,
+    source: usize,
+    v: usize
+}
+
+// The priority queue depends on `Ord`.
+// Explicitly implement the trait so the queue becomes a min-heap
+// instead of a max-heap.
+impl Ord for MultiSourceState {
+    fn cmp(&self, other: &Self) -> cmp::Ordering
+    {
+        // Notice that we flip the ordering on costs.
+        // In case of a tie we compare positions - this step is necessary
+        // to make implementations of `PartialEq` and `Ord` consistent.
+        other.cost.cmp (&self.cost)
+            .then_with (|| self.v.cmp(&other.v))
+    }
+}
+
+// `PartialOrd` needs to be implemented as well.
+impl PartialOrd for MultiSourceState {
+    fn partial_cmp(&self, other: &Self) -> Option<cmp::Ordering>
+    {
+        Some(self.cmp(other))
+    }
+}
 
 pub fn bfs_edges<G: graph::GraphAny> (g: &G, source: usize)
     -> Result<Vec<(usize, usize)>, error::GraphError>
 {
     let neighbours = g.vertices ().iter ().fold (collections::HashMap::<usize, collections::HashSet<usize>>::new (), |mut acc, item| {
-        acc.insert (*item, g.neighbours (item).unwrap ());
+        acc.insert (*item, g.adjacent (item).unwrap ());
         acc
         });
     let mut neighbours_iters = neighbours.iter ().fold (collections::HashMap::<usize, collections::hash_set::Iter<'_, usize>>::new (), |mut acc, (k, v)| {
@@ -45,7 +76,7 @@ pub fn edge_bfs<G: graph::GraphAny> (g: &G, source: usize)
     -> Result<Vec<(usize, usize)>, error::GraphError>
 {
     let neighbours = g.vertices ().iter ().fold (collections::HashMap::<usize, collections::HashSet<usize>>::new (), |mut acc, item| {
-        acc.insert (*item, g.neighbours (item).unwrap ());
+        acc.insert (*item, g.adjacent (item).unwrap ());
         acc
         });
     let mut neighbours_iters = neighbours.iter ().fold (collections::HashMap::<usize, collections::hash_set::Iter<'_, usize>>::new (), |mut acc, (k, v)| {
@@ -112,7 +143,7 @@ pub fn edge_bfs<G: graph::GraphAny> (g: &G, source: usize)
     Ok (r)
 }
 
-pub fn connected_components<G: graph::GraphAny> (g: &G)
+pub fn connected_components (g: &graph::UGraph)
     -> Result<Vec<collections::HashSet<usize>>, error::GraphError>
 {
     let mut r = Vec::<collections::HashSet<usize>>::new ();
@@ -192,7 +223,7 @@ pub fn single_shortest_path<G: graph::GraphAny> (g: &G, source: usize)
     -> Result<collections::HashMap<usize, Vec<usize>>, error::GraphError>
 {
     let neighbours = g.vertices ().iter ().fold (collections::HashMap::<usize, collections::HashSet<usize>>::new (), |mut acc, item| {
-        acc.insert (*item, g.neighbours (item).unwrap ());
+        acc.insert (*item, g.adjacent (item).unwrap ());
         acc
         });
     let mut neighbours_iters = neighbours.iter ().fold (collections::HashMap::<usize, collections::hash_set::Iter<'_, usize>>::new (), |mut acc, (k, v)| {
@@ -224,6 +255,61 @@ pub fn single_shortest_path<G: graph::GraphAny> (g: &G, source: usize)
     }
 
 
+    Ok (r)
+}
+
+// I want to reuse as much as possible between paths
+pub fn multi_source_dijkstra<G: graph::GraphAny> (g: &G, sources: &collections::HashSet<usize>)
+    -> Result<collections::HashMap<usize, (collections::HashMap<usize,i64>, collections::HashMap<usize, Vec<usize>>)>, error::GraphError>
+{
+    let mut r = collections::HashMap::<usize, (collections::HashMap<usize,i64>, collections::HashMap<usize, Vec<usize>>)>::new ();
+    let mut fringe = collections::BinaryHeap::<MultiSourceState>::new ();
+
+    for source in sources
+    {
+        fringe.push (MultiSourceState { cost: 0, source: *source, v: *source });
+        r.insert (*source, ( collections::HashMap::<usize,i64>::from ([ ( *source, 0 ) ]), collections::HashMap::<usize, Vec<usize>>::from ([ ( *source, Vec::from ([*source]) ) ])) );
+    }
+
+    while let Some (MultiSourceState { cost, source, v }) = fringe.pop ()
+    {
+        //debug! ("current mss ({}, {}, {})", cost, source, v);
+
+        if cost > *r.get (&source).unwrap ().0.get (&v).unwrap ()
+        {
+            continue;
+        }
+        else
+        {
+            for v_child in g.adjacent (&v)?
+            {
+                let e = (v, v_child);
+                let ew = g.weight (&e)?;
+
+                let mss_next = MultiSourceState { cost: cost + ew, source: source, v: v_child };
+
+                let mut path_new = r.get (&source).unwrap ().1.get (&v)
+                    .ok_or (error::GraphError::AlgorithmError (format! ("Path for {} not found for source {}", v, source)))?
+                    .clone ();
+                path_new.push (mss_next.v);
+                if let Some (dist_next) = r.get (&source).unwrap ().0.get (&mss_next.v).copied ()
+                {
+                    if mss_next.cost < dist_next
+                    {
+                        r.get_mut (&source).unwrap ().0.insert (mss_next.v, mss_next.cost);
+                        fringe.push (mss_next);
+                    }
+                }
+                else
+                {
+                    // dist_next is infinite
+                    r.get_mut (&source).unwrap ().0.insert (mss_next.v, mss_next.cost);
+                    r.get_mut (&source).unwrap ().1.insert (mss_next.v, path_new);
+                    fringe.push (mss_next);
+                }
+            }
+        }
+    }
     Ok (r)
 }
 
@@ -264,8 +350,9 @@ pub fn topological_sort (g: &graph::Graph)
 #[cfg(test)]
 mod tests
 {
+    //use log::debug;
+    use crate::graph;
     use std::collections;
-    use super::*;
     use std::sync;
 
     static INIT: sync::Once = sync::Once::new ();
@@ -288,7 +375,7 @@ mod tests
         g.add_edge_raw (3,1,0).expect ("Failed to add edge 3 -> 1");
 
         let solutions = collections::HashSet::from ([vec![2,3,1], vec![3,2,1]]);
-        let r = topological_sort (&g).unwrap ();
+        let r = super::topological_sort (&g).unwrap ();
         assert! (solutions.contains (&r), "{:?} not found in {:?}", r, solutions);
     }
 
@@ -306,7 +393,7 @@ mod tests
         g.add_edge_raw (2,1,0).expect ("Failed to add edge 2 -> 1");
 
         let solutions = collections::HashSet::from ([vec![2,1,3]]);
-        let r = topological_sort (&g).unwrap ();
+        let r = super::topological_sort (&g).unwrap ();
         assert! (solutions.contains (&r), "{:?} not found in {:?}", r, solutions);
     }
 
@@ -322,12 +409,12 @@ mod tests
         //   2       3
         //  / \     / \
         // 4   5   6   7
-        g.add_edge_raw (2,1,0).expect ("Failed to add edge 2 -> 1");
-        g.add_edge_raw (3,1,0).expect ("Failed to add edge 3 -> 1");
-        g.add_edge_raw (4,2,0).expect ("Failed to add edge 4 -> 2");
-        g.add_edge_raw (5,2,0).expect ("Failed to add edge 5 -> 2");
-        g.add_edge_raw (6,3,0).expect ("Failed to add edge 6 -> 3");
-        g.add_edge_raw (7,3,0).expect ("Failed to add edge 7 -> 3");
+        g.add_edge_raw (1,2,0).expect ("Failed to add edge 1 -> 2");
+        g.add_edge_raw (1,3,0).expect ("Failed to add edge 1 -> 3");
+        g.add_edge_raw (2,4,0).expect ("Failed to add edge 2 -> 4");
+        g.add_edge_raw (2,5,0).expect ("Failed to add edge 2 -> 5");
+        g.add_edge_raw (3,6,0).expect ("Failed to add edge 3 -> 6");
+        g.add_edge_raw (3,7,0).expect ("Failed to add edge 3 -> 7");
 
         let solutions = collections::HashSet::from ([
                                                     vec![(1,2), (1,3), (2,4), (2,5), (3,6), (3,7)],
@@ -339,7 +426,7 @@ mod tests
                                                     vec![(1,3), (1,2), (3,7), (3,6), (2,4), (2,5)],
                                                     vec![(1,3), (1,2), (3,7), (3,6), (2,5), (2,4)]
             ]);
-        let r = bfs_edges (&g, 1).unwrap ();
+        let r = super::bfs_edges (&g, 1).unwrap ();
         assert! (solutions.contains (&r), "{:?} not found in {:?}", r, solutions);
     }
 
@@ -355,25 +442,25 @@ mod tests
         //   2       3
         //  / \     / \
         // 4   5   6   7
-        g.add_edge_raw (2,1,0).expect ("Failed to add edge 2 -> 1");
-        g.add_edge_raw (3,1,0).expect ("Failed to add edge 3 -> 1");
-        g.add_edge_raw (4,2,0).expect ("Failed to add edge 4 -> 2");
-        g.add_edge_raw (5,2,0).expect ("Failed to add edge 5 -> 2");
-        g.add_edge_raw (6,3,0).expect ("Failed to add edge 6 -> 3");
-        g.add_edge_raw (7,3,0).expect ("Failed to add edge 7 -> 3");
+        g.add_edge_raw (1,2,0).expect ("Failed to add edge 1 -> 2");
+        g.add_edge_raw (1,3,0).expect ("Failed to add edge 1 -> 3");
+        g.add_edge_raw (2,4,0).expect ("Failed to add edge 2 -> 4");
+        g.add_edge_raw (2,5,0).expect ("Failed to add edge 2 -> 5");
+        g.add_edge_raw (3,6,0).expect ("Failed to add edge 3 -> 6");
+        g.add_edge_raw (3,7,0).expect ("Failed to add edge 3 -> 7");
 
         let solutions = collections::HashSet::from ([
-                                                    vec![(2,1), (3,1), (4,2), (5,2), (6,3), (7,3)],
-                                                    vec![(2,1), (3,1), (4,2), (5,2), (7,3), (6,3)],
-                                                    vec![(2,1), (3,1), (5,2), (4,2), (6,3), (7,3)],
-                                                    vec![(2,1), (3,1), (5,2), (4,2), (7,3), (6,3)],
-                                                    vec![(3,1), (2,1), (6,3), (7,3), (4,2), (5,2)],
-                                                    vec![(3,1), (2,1), (6,3), (7,3), (5,2), (4,2)],
-                                                    vec![(3,1), (2,1), (7,3), (6,3), (4,2), (5,2)],
-                                                    vec![(3,1), (2,1), (7,3), (6,3), (5,2), (4,2)]
+                                                    vec![(1,2), (1,3), (2,4), (2,5), (3,6), (3,7)],
+                                                    vec![(1,2), (1,3), (2,4), (2,5), (3,7), (3,6)],
+                                                    vec![(1,2), (1,3), (2,5), (2,4), (3,6), (3,7)],
+                                                    vec![(1,2), (1,3), (2,5), (2,4), (3,7), (3,6)],
+                                                    vec![(1,3), (1,2), (3,6), (3,7), (2,4), (2,5)],
+                                                    vec![(1,3), (1,2), (3,6), (3,7), (2,5), (2,4)],
+                                                    vec![(1,3), (1,2), (3,7), (3,6), (2,4), (2,5)],
+                                                    vec![(1,3), (1,2), (3,7), (3,6), (2,5), (2,4)]
             ]);
 
-        let r = edge_bfs (&g, 1).unwrap ();
+        let r = super::edge_bfs (&g, 1).unwrap ();
         assert! (solutions.contains (&r), "{:?} not found in {:?}", r, solutions);
     }
 
@@ -389,15 +476,15 @@ mod tests
         // *
         // *
         // 3
-        g.add_edge_raw (2,1,0).expect ("Failed to add edge 2 -> 1");
-        g.add_edge_raw (3,2,0).expect ("Failed to add edge 3 -> 2");
+        g.add_edge_raw (1,2,0).expect ("Failed to add edge 1 -> 2");
         g.add_edge_raw (2,3,0).expect ("Failed to add edge 2 -> 3");
+        g.add_edge_raw (3,2,0).expect ("Failed to add edge 3 -> 2");
 
         let solutions = collections::HashSet::from ([
-                                                    vec![(2,1), (2,3), (3,2)]
+                                                    vec![(1,2), (2,3), (3,2)]
             ]);
 
-        let r = edge_bfs (&g, 1).unwrap ();
+        let r = super::edge_bfs (&g, 1).unwrap ();
         assert! (solutions.contains (&r), "{:?} not found in {:?}", r, solutions);
     }
 
@@ -405,7 +492,7 @@ mod tests
     fn test_connected_components ()
     {
         init ();
-        let mut g = graph::Graph::new ();
+        let mut g = graph::UGraph::new ();
         //   1       4
         //  / \     / \
         // 2   3   5   6
@@ -419,7 +506,7 @@ mod tests
             collections::HashSet::from_iter (vec![4,5,6])
         ];
 
-        let mut r = connected_components (&g).unwrap ();
+        let mut r = super::connected_components (&g).unwrap ();
         r.sort_by_key (|k| *k.iter ().min ().expect ("Failed to find min of component"));
         assert_eq! (r,solution);
     }
@@ -449,7 +536,7 @@ mod tests
             Vec::from ([ collections::HashSet::<usize>::from ([1,3,6,7]), collections::HashSet::<usize>::from ([2,4,5]) ])
         ]);
 
-        let (nl, ln) = fast_label_propagation (&g, &mut 42u64).expect ("Failed fast label propagation");
+        let (nl, ln) = super::fast_label_propagation (&g, &mut 42u64).expect ("Failed fast label propagation");
 
         let mut r = ln.values ().cloned ().collect::<Vec<_>> ();
         r.sort_by_key (|k| *k.iter ().min ().expect ("Failed to find min"));
@@ -458,6 +545,147 @@ mod tests
         assert! (nl.values ().all (|x| ln.contains_key (x)));
         assert! (nl.iter ().all (|(n,l)| ln[l].contains (n)));
         assert! (solutions.contains (&r), "{:?} not found in solutions", r);
+    }
+
+    #[test]
+    fn test_multi_dijkstra ()
+    {
+        init ();
+        let mut g = graph::Graph::new ();
+        // 3     4
+        //  \   /
+        //   * *
+        //    2
+        //    |
+        //    *
+        //    1
+        g.add_edge_raw (2,1,0).expect ("Failed to add edge 2 -> 1");
+        g.add_edge_raw (3,2,0).expect ("Failed to add edge 3 -> 2");
+        g.add_edge_raw (4,2,0).expect ("Failed to add edge 4 -> 2");
+
+        let solution = collections::HashMap::<usize, (collections::HashMap<usize,i64>, collections::HashMap<usize,Vec<usize>>)>::from ([
+            ( 3, (
+                    collections::HashMap::<usize, i64>::from ([
+                        ( 1, 0 ),
+                        ( 2, 0 ),
+                        ( 3, 0 )
+                    ]),
+                    collections::HashMap::<usize, Vec<usize>>::from ([
+                        ( 1, Vec::from ([3, 2, 1]) ),
+                        ( 2, Vec::from ([3, 2]) ),
+                        ( 3, Vec::from ([3]) )
+                    ])
+                )
+            ),
+            ( 4, (
+                    collections::HashMap::<usize, i64>::from ([
+                        ( 1, 0 ),
+                        ( 2, 0 ),
+                        ( 4, 0 )
+                    ]),
+                    collections::HashMap::<usize, Vec<usize>>::from ([
+                        ( 1, Vec::from ([4, 2, 1]) ),
+                        ( 2, Vec::from ([4, 2]) ),
+                        ( 4, Vec::from ([4]) )
+                    ])
+                )
+            )
+        ]);
+
+        let sources = collections::HashSet::<usize>::from ([3,4]);
+        let r = super::multi_source_dijkstra (&g, &sources).unwrap ();
+
+        assert_eq! (r, solution);
+    }
+
+    #[test]
+    fn test_multi_dijkstra_weighted_u ()
+    {
+        init ();
+        let mut g = graph::LabelledUGraph::new ();
+        // Graph copied from https://raw.githubusercontent.com/networkx/networkx/main/examples/algorithms/plot_shortest_path.py
+
+        g.add_edge_weighted (String::from ("A"), String::from ("B"), None,  4).expect ("Failed to add edge A -> B  4");//G.add_edge("A", "B", weight=4)
+        g.add_edge_weighted (String::from ("A"), String::from ("H"), None,  8).expect ("Failed to add edge A -> H  8");//G.add_edge("A", "H", weight=8)
+        g.add_edge_weighted (String::from ("B"), String::from ("C"), None,  8).expect ("Failed to add edge B -> C  8");//G.add_edge("B", "C", weight=8)
+        g.add_edge_weighted (String::from ("B"), String::from ("H"), None, 11).expect ("Failed to add edge B -> H 11");//G.add_edge("B", "H", weight=11)
+        g.add_edge_weighted (String::from ("C"), String::from ("D"), None,  7).expect ("Failed to add edge C -> D  7");//G.add_edge("C", "D", weight=7)
+        g.add_edge_weighted (String::from ("C"), String::from ("F"), None,  4).expect ("Failed to add edge C -> F  4");//G.add_edge("C", "F", weight=4)
+        g.add_edge_weighted (String::from ("C"), String::from ("I"), None,  2).expect ("Failed to add edge C -> I  2");//G.add_edge("C", "I", weight=2)
+        g.add_edge_weighted (String::from ("D"), String::from ("E"), None,  9).expect ("Failed to add edge D -> E  9");//G.add_edge("D", "E", weight=9)
+        g.add_edge_weighted (String::from ("D"), String::from ("F"), None, 14).expect ("Failed to add edge D -> F 14");//G.add_edge("D", "F", weight=14)
+        g.add_edge_weighted (String::from ("E"), String::from ("F"), None, 10).expect ("Failed to add edge E -> F 10");//G.add_edge("E", "F", weight=10)
+        g.add_edge_weighted (String::from ("F"), String::from ("G"), None,  2).expect ("Failed to add edge F -> G  2");//G.add_edge("F", "G", weight=2)
+        g.add_edge_weighted (String::from ("G"), String::from ("H"), None,  1).expect ("Failed to add edge G -> H  1");//G.add_edge("G", "H", weight=1)
+        g.add_edge_weighted (String::from ("G"), String::from ("I"), None,  6).expect ("Failed to add edge G -> I  6");//G.add_edge("G", "I", weight=6)
+        g.add_edge_weighted (String::from ("H"), String::from ("I"), None,  7).expect ("Failed to add edge H -> I  7");//G.add_edge("H", "I", weight=7)
+
+        let v_a = g.vertex ("A").expect ("Failed to find vertex for 'A'");
+        let v_e = g.vertex ("E").expect ("Failed to find vertex for 'E'");
+
+        let sources = collections::HashSet::<usize>::from ([v_a]);
+        let r = super::multi_source_dijkstra (g.graph (), &sources).unwrap ();
+
+        let path_ae = r[&v_a].1[&v_e].iter ().map (|x| g.vertex_label (x).expect (&format! ("Failed to find vertex label for '{}'", x))).collect::<Vec<_>> ();
+        let weight_ae = r[&v_a].0[&v_e];
+
+        assert_eq! (path_ae, "AHGFE".chars ().map(String::from).collect::<Vec<_>> ());
+        assert_eq! (weight_ae, 21);
+    }
+
+    #[test]
+    fn test_multi_dijkstra_weighted_multi_u ()
+    {
+        init ();
+        let mut g = graph::UGraph::new ();
+        // 3     4
+        //  \   /
+        //   \ /
+        //    2
+        //    |
+        //    |
+        //    1
+        g.add_edge_raw (2,1,1).expect ("Failed to add edge 2 -> 1 1");
+        g.add_edge_raw (3,2,1).expect ("Failed to add edge 3 -> 2 1");
+        g.add_edge_raw (4,2,2).expect ("Failed to add edge 4 -> 2 2");
+
+        let solution = collections::HashMap::<usize, (collections::HashMap<usize,i64>, collections::HashMap<usize,Vec<usize>>)>::from ([
+            ( 3, (
+                    collections::HashMap::<usize, i64>::from ([
+                        ( 1, 2 ),
+                        ( 2, 1 ),
+                        ( 3, 0 ),
+                        ( 4, 3 )
+                    ]),
+                    collections::HashMap::<usize, Vec<usize>>::from ([
+                        ( 1, Vec::from ([3, 2, 1]) ),
+                        ( 2, Vec::from ([3, 2]) ),
+                        ( 3, Vec::from ([3]) ),
+                        ( 4, Vec::from ([3, 2, 4]) )
+                    ])
+                )
+            ),
+            ( 4, (
+                    collections::HashMap::<usize, i64>::from ([
+                        ( 1, 3 ),
+                        ( 2, 2 ),
+                        ( 3, 3 ),
+                        ( 4, 0 )
+                    ]),
+                    collections::HashMap::<usize, Vec<usize>>::from ([
+                        ( 1, Vec::from ([4, 2, 1]) ),
+                        ( 2, Vec::from ([4, 2]) ),
+                        ( 3, Vec::from ([4,2,3,]) ),
+                        ( 4, Vec::from ([4]) )
+                    ])
+                )
+            )
+        ]);
+
+        let sources = collections::HashSet::<usize>::from ([3,4]);
+        let r = super::multi_source_dijkstra (&g, &sources).unwrap ();
+
+        assert_eq! (r, solution);
     }
 
     #[test]
@@ -472,12 +700,12 @@ mod tests
         //   2       3
         //  / \     / \
         // 4   5   6   7
-        g.add_edge_raw (2,1,0).expect ("Failed to add edge 2 -> 1");
-        g.add_edge_raw (3,1,0).expect ("Failed to add edge 3 -> 1");
-        g.add_edge_raw (4,2,0).expect ("Failed to add edge 4 -> 2");
-        g.add_edge_raw (5,2,0).expect ("Failed to add edge 5 -> 2");
-        g.add_edge_raw (6,3,0).expect ("Failed to add edge 6 -> 3");
-        g.add_edge_raw (7,3,0).expect ("Failed to add edge 7 -> 3");
+        g.add_edge_raw (1,2,0).expect ("Failed to add edge 1 -> 2");
+        g.add_edge_raw (1,3,0).expect ("Failed to add edge 1 -> 3");
+        g.add_edge_raw (2,4,0).expect ("Failed to add edge 2 -> 4");
+        g.add_edge_raw (2,5,0).expect ("Failed to add edge 2 -> 5");
+        g.add_edge_raw (3,6,0).expect ("Failed to add edge 3 -> 6");
+        g.add_edge_raw (3,7,0).expect ("Failed to add edge 3 -> 7");
 
         let solution = collections::HashMap::from ([
             (1, vec![1]),
@@ -489,7 +717,7 @@ mod tests
             (7, vec![1,3,7])
         ]);
 
-        let r = single_shortest_path (&g, 1).unwrap ();
+        let r = super::single_shortest_path (&g, 1).unwrap ();
         assert_eq! (r,solution);
     }
 }
