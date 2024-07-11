@@ -367,13 +367,22 @@ impl Graph
         }
     }
 
+    pub fn endpoints (&self)
+        -> collections::HashSet<usize>
+    {
+        let mut r = collections::HashSet::<usize>::with_capacity (self.vertices.len ());
+        r.extend (self.inbound.keys ().copied ());
+        r.extend (self.outbound.keys ().copied ());
+        r
+    }
+
     pub fn edges (&self)
         -> &collections::HashMap <(usize,usize), i64>
     {
         &self.edges
     }
 
-    pub fn is_leaf (&self, a: &usize)
+    pub fn is_source (&self, a: &usize)
         -> Result<bool, crate::error::GraphError>
     {
         if self.vertices.contains (a)
@@ -393,7 +402,7 @@ impl Graph
         }
     }
 
-    pub fn is_root (&self, a: &usize)
+    pub fn is_sink (&self, a: &usize)
         -> Result<bool, crate::error::GraphError>
     {
         if self.vertices.contains (a)
@@ -419,7 +428,7 @@ impl Graph
         self.name.clone ()
     }
 
-    pub fn leaves (&self)
+    pub fn sources (&self)
         -> collections::HashSet::<usize>
     {
         self.vertices.iter ().filter (|x| !self.inbound.contains_key (x)).copied ().collect::<collections::HashSet::<usize>> ()
@@ -521,7 +530,7 @@ impl Graph
         self.name = name;
     }
 
-    pub fn roots (&self)
+    pub fn sinks (&self)
         -> collections::HashSet <usize>
     {
         self.vertices.iter ().filter (|x| !self.outbound.contains_key (x)).copied ().collect::<collections::HashSet::<usize>> ()
@@ -530,9 +539,19 @@ impl Graph
     pub fn retain (&mut self, vertices_retain: &collections::HashSet<usize>)
         -> Result<(), crate::error::GraphError>
     {
-        for vd in self.vertices () - vertices_retain
+        for vd in &self.vertices - vertices_retain
         {
             self.remove_vertex_raw (&vd)?;
+        }
+        Ok (())
+    }
+
+    pub fn retain_edges (&mut self, edges_retain: &collections::HashSet<(usize,usize)>)
+        -> Result<(), crate::error::GraphError>
+    {
+        for e in &self.edges.keys ().cloned ().collect::<collections::HashSet<_>> () - edges_retain
+        {
+            self.remove_edge_raw (&e.0, &e.1)?;
         }
         Ok (())
     }
@@ -1065,8 +1084,18 @@ impl LabelledGraph
                 self.edge_attrs.remove ( &(vd, vdo) );
             }
         }
-        self.graph.retain (vertices_retain)?;
-        Ok (())
+        self.graph.retain (vertices_retain)
+    }
+
+    pub fn retain_edges (&mut self, edges_retain: &collections::HashSet<(usize,usize)>)
+        -> Result<(), crate::error::GraphError>
+    {
+        for e in &self.graph.edges.keys ().cloned ().collect::<collections::HashSet<_>> () - &edges_retain
+        {
+            self.edge_attrs.remove (&e);
+        }
+
+        self.graph.retain_edges (edges_retain)
     }
 }
 
@@ -1471,6 +1500,7 @@ impl GraphAny for UGraph
 #[cfg(test)]
 mod tests
 {
+    //use log::debug;
     use serde_json;
     use std::collections;
     use super::*;
@@ -1485,7 +1515,7 @@ mod tests
     }
 
     #[test]
-    fn test_leaves_and_roots ()
+    fn test_sources_and_sinks ()
     {
         init ();
         let mut g = Graph::new ();
@@ -1496,18 +1526,18 @@ mod tests
         g.add_edge_raw (7,5,0).expect ("Failed to add edge 7 -> 5");
         g.add_edge_raw (5,4,0).expect ("Failed to add edge 5 -> 4");
 
-        let expected_leaves = collections::HashSet::<usize>::from ([3,2,7,6]);
-        let expected_roots = collections::HashSet::<usize>::from ([0,4]);
+        let expected_sources = collections::HashSet::<usize>::from ([3,2,7,6]);
+        let expected_sinks = collections::HashSet::<usize>::from ([0,4]);
 
-        assert_eq! (g.leaves (), expected_leaves, "Failed to obtain correct leaves");
-        assert_eq! (g.roots (), expected_roots, "Failed to obtain correct roots");
+        assert_eq! (g.sources (), expected_sources, "Failed to obtain correct sources");
+        assert_eq! (g.sinks (), expected_sinks, "Failed to obtain correct sinks");
 
-        let expected_is_leaf = vec![false,false,true,true,false,false,true,true];
-        let expected_is_root = vec![true,false,false,false,true,false,false,false];
+        let expected_is_source = vec![false,false,true,true,false,false,true,true];
+        let expected_is_sink = vec![true,false,false,false,true,false,false,false];
 
         assert_eq! (g.vertices (), &(0..8).collect::<collections::HashSet<usize>> (), "Failed to obtain correct vertex ids");
-        assert_eq! ((0..8).map (|x| g.is_leaf (&x).expect ("Failed to call is_leaf")).collect::<Vec<_>> (), expected_is_leaf, "Failed is_leaf");
-        assert_eq! ((0..8).map (|x| g.is_root (&x).expect ("Failed to call is_root")).collect::<Vec<_>> (), expected_is_root, "Failed is_root");
+        assert_eq! ((0..8).map (|x| g.is_source (&x).expect ("Failed to call is_source")).collect::<Vec<_>> (), expected_is_source, "Failed is_source");
+        assert_eq! ((0..8).map (|x| g.is_sink (&x).expect ("Failed to call is_sink")).collect::<Vec<_>> (), expected_is_sink, "Failed is_sink");
     }
 
     #[test]
@@ -1666,6 +1696,29 @@ mod tests
     }
 
     #[test]
+    fn test_endpoints ()
+    {
+        init ();
+        let mut g = Graph::new ();
+        //   1
+        //   |
+        //   2
+        //  / \
+        // 3   4
+        g.add_edge_raw (2, 1, 0).expect ("Failed to add edge 2 -> 1");
+        g.add_edge_raw (3, 2, 0).expect ("Failed to add edge 3 -> 2");
+        g.add_edge_raw (4, 2, 0).expect ("Failed to add edge 4 -> 2");
+
+        assert_eq! (g.vertices (), &(1..5).collect::<collections::HashSet<_>> ());
+        assert_eq! (g.endpoints (), collections::HashSet::<usize>::from ([1,2,3,4]), "endpoints not equal");
+
+        let mut rg = g.clone ();
+        rg.remove_vertex_raw (&2).expect ("Failed to remove vertex 2");
+
+        assert! (rg.endpoints ().is_empty (), "endpoints should be empty");
+    }
+
+    #[test]
     fn test_retain ()
     {
         init ();
@@ -1685,8 +1738,8 @@ mod tests
         let mut rg = g.clone ();
         rg.retain (&retain).expect ("Failed retain");
 
-        assert_eq! (rg.leaves (), collections::HashSet::<usize>::from ([1,3,4]));
-        assert_eq! (rg.roots (), collections::HashSet::<usize>::from ([1,3,4]));
+        assert_eq! (rg.sources (), collections::HashSet::<usize>::from ([1,3,4]));
+        assert_eq! (rg.sinks (), collections::HashSet::<usize>::from ([1,3,4]));
         assert_eq! (rg.edges (), &collections::HashMap::<(usize,usize), i64>::new ());
     }
 
@@ -1720,9 +1773,75 @@ mod tests
 
         assert_eq! (vertex_labels_retained, vertex_labels_retained_expected);
 
-        assert_eq! (rg.graph ().leaves (), collections::HashSet::<usize>::from ([1,3,4]));
-        assert_eq! (rg.graph ().roots (), collections::HashSet::<usize>::from ([1,3,4]));
+        assert_eq! (rg.graph ().sources (), collections::HashSet::<usize>::from ([1,3,4]));
+        assert_eq! (rg.graph ().sinks (), collections::HashSet::<usize>::from ([1,3,4]));
         assert_eq! (rg.edges (), &collections::HashMap::<(usize,usize), i64>::new ());
+    }
+
+    #[test]
+    fn test_retain_edges ()
+    {
+        init ();
+        let mut g = Graph::new ();
+        //    1
+        //    *
+        //    *
+        //    2
+        //   * *
+        //  *   \
+        // 3     4
+        g.add_edge_raw (1, 2, 0).expect ("Failed to add edge 1 -> 2");
+        g.add_edge_raw (2, 1, 0).expect ("Failed to add edge 2 -> 1");
+        g.add_edge_raw (2, 3, 0).expect ("Failed to add edge 2 -> 3");
+        g.add_edge_raw (3, 2, 0).expect ("Failed to add edge 3 -> 2");
+        g.add_edge_raw (4, 2, 0).expect ("Failed to add edge 4 -> 2");
+
+        assert_eq! (g.vertices (), &(1..5).collect::<collections::HashSet<_>> ());
+
+        let retain = collections::HashSet::<(usize,usize)>::from ([ (3,2), (4,2) ]);
+        let mut rg = g.clone ();
+        rg.retain_edges (&retain).expect ("Failed retain_edges");
+        let edges_retained_expected = retain.iter ().fold (collections::HashMap::<(usize,usize), i64>::new (), |mut acc, item| { acc.insert (*item, 0);acc });
+
+        assert_eq! (rg.sources (), collections::HashSet::<usize>::from ([1,3,4]), "sources not equal");
+        assert_eq! (rg.sinks (), collections::HashSet::<usize>::from ([1,2]), "sinks not equal");
+        assert_eq! (rg.edges (), &edges_retained_expected, "edges not as expected");
+    }
+
+    #[test]
+    fn test_retain_edges_labelled ()
+    {
+        init ();
+        let mut g = LabelledGraph::new ();
+        //    a
+        //    *
+        //    *
+        //    b
+        //   * *
+        //  *   \
+        // c     d
+        g.add_edge (String::from ("b"), String::from ("a"), None).expect ("Failed to add edge b -> a");
+        g.add_edge (String::from ("a"), String::from ("b"), None).expect ("Failed to add edge a -> b");
+        g.add_edge (String::from ("b"), String::from ("c"), None).expect ("Failed to add edge b -> c");
+        g.add_edge (String::from ("c"), String::from ("b"), None).expect ("Failed to add edge c -> b");
+        g.add_edge (String::from ("d"), String::from ("b"), None).expect ("Failed to add edge d -> b");
+
+        assert_eq! (g.graph ().vertices (), &(1..5).collect::<collections::HashSet<_>> ());
+
+        let vertex_labels_expected = ["a","b","c","d"].into_iter ().map (String::from).collect::<Vec<_>> ();
+        let vertex_labels = (1..5).map (|x| g.vertex_label (&x).expect (&format! ("Failed to find vertex '{}'", x))).collect::<Vec<_>> ();
+
+        assert_eq! (vertex_labels, vertex_labels_expected);
+
+        let retain = collections::HashSet::<(usize,usize)>::from ([ (3,2), (4,2) ]);
+        let mut rg = g.clone ();
+        rg.retain_edges (&retain).expect ("Failed retain_edges");
+
+        let vertex_labels_retained_expected = ["b","c","d"].into_iter ().map (String::from).collect::<Vec<_>> ();
+        let vertex_labels_retained = vec![2,3,4].iter ().map (|x| rg.vertex_label (&x).expect (&format! ("Failed to find vertex '{}'", x))).collect::<Vec<_>> ();
+
+        assert_eq! (vertex_labels_retained, vertex_labels_retained_expected);
+        // TODO: test more
     }
 
     #[test]

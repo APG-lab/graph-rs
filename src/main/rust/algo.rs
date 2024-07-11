@@ -318,21 +318,21 @@ pub fn topological_sort (g: &graph::Graph)
 {
     let mut r = Vec::<usize>::new ();
     let mut gc = g.clone ();
-    let mut leaves = gc.leaves ();
+    let mut sources = gc.sources ();
 
-    while !leaves.is_empty ()
+    while !sources.is_empty ()
     {
-        let n = *leaves.iter ().next ().unwrap ();
-        leaves.remove (&n);
+        let n = *sources.iter ().next ().unwrap ();
+        sources.remove (&n);
         r.push (n);
         //debug! ("leaves: {:?} n: {}", leaves, n);
         for m in gc.outbound (&n)?
         {
             gc.remove_edge_raw (&n, &m)?;
             //debug! ("are {} is_leaf? {}", m, gc.is_leaf (&m)?);
-            if gc.is_leaf (&m)?
+            if gc.is_source (&m)?
             {
-                leaves.insert  (m);
+                sources.insert  (m);
             }
         }
     }
