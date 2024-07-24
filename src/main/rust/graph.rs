@@ -817,6 +817,34 @@ impl LabelledGraph
         }
     }
 
+    pub fn add_edge_raw (&mut self, a_id: usize, a: String, b_id: usize, b: String, attrs: Option<collections::HashMap::<String, AttributeValue>>, weight: i64)
+        -> Result<(usize, usize), crate::error::GraphError>
+    {
+        if a == b
+        {
+            Err (crate::error::GraphError::EdgeError (String::from ("edge vertices must be distinct")))
+        }
+        else if a_id == b_id
+        {
+            Err (crate::error::GraphError::EdgeError (String::from ("edge vertex ids must be distinct")))
+        }
+        else
+        {
+            self.add_vertex_raw (a_id, a, None)?;
+            self.add_vertex_raw (b_id, b, None)?;
+            self.graph.add_edge_raw (a_id, b_id, weight)?;
+            if let Some (edge_attrs) = attrs
+            {
+                self.edge_attrs.insert ((a_id, b_id), edge_attrs);
+            }
+            else
+            {
+                self.edge_attrs.insert ((a_id, b_id), collections::HashMap::<String, AttributeValue>::new ());
+            }
+            Ok ((a_id, b_id))
+        }
+    }
+
     pub fn add_vertex (&mut self, a: String, attrs: Option<collections::HashMap::<String, AttributeValue>>)
         -> Result<usize, crate::error::GraphError>
     {
@@ -837,6 +865,63 @@ impl LabelledGraph
             self.vertex_attrs.insert (a_id, collections::HashMap::<String, AttributeValue>::new ());
         }
         Ok (a_id)
+    }
+
+    pub fn add_vertex_raw (&mut self, a_id: usize, a: String, attrs: Option<collections::HashMap::<String, AttributeValue>>)
+        -> Result<usize, crate::error::GraphError>
+    {
+        // If the vertices already exist, check the the ids are consistent
+        if let Some (a_id_e) = self.vertex_lookup.get (&a)
+        {
+            if *a_id_e == a_id
+            {
+                if let Some (vertex_attrs) = attrs
+                {
+                    self.vertex_attrs.insert (a_id, vertex_attrs);
+                }
+                else
+                {
+                    self.vertex_attrs.insert (a_id, collections::HashMap::<String, AttributeValue>::new ());
+                }
+
+                Ok (*a_id_e)
+            }
+            else
+            {
+                Err (crate::error::GraphError::VertexError (String::from ("vertex already exists but has a different id")))
+            }
+        }
+        else
+        {
+                if let Some (a_e) = self.vertex_label.get (&a_id)
+                {
+                    if *a_e == a
+                    {
+                        unreachable! ("Recovered vertex label for source id but it should have been found in the vertex lookup");
+                    }
+                    else
+                    {
+                        Err (crate::error::GraphError::VertexError (String::from ("vertex id already exists but has a different label")))
+                    }
+                }
+                else
+                {
+                    self.vertex_id.fetch_max (a_id + 1, sync::atomic::Ordering::Relaxed);
+                    self.vertex_lookup.insert (a.clone (), a_id);
+                    self.graph.add_vertex_raw (a_id)?;
+                    self.vertex_label.insert (a_id, a.clone ());
+                    if let Some (vertex_attrs) = attrs
+                    {
+                        self.vertex_attrs.insert (a_id, vertex_attrs);
+                    }
+                    else
+                    {
+                        self.vertex_attrs.insert (a_id, collections::HashMap::<String, AttributeValue>::new ());
+                    }
+
+                    Ok (a_id)
+                }
+        }
     }
 
     pub fn graph (&self)
@@ -1515,6 +1600,26 @@ mod tests
     }
 
     #[test]
+    fn test_add_vertex_raw_labelled ()
+    {
+        init ();
+        let mut g = LabelledGraph::new ();
+        let a_id = g.add_vertex (String::from ("a"), None).expect ("Failed to add vertex 'a'");
+
+        assert_eq! (g.add_vertex_raw (a_id, String::from ("b"), None).unwrap_err ().to_string (), "Vertex error: vertex id already exists but has a different label");
+        assert_eq! (g.add_vertex_raw (a_id + 10, String::from ("a"), None).unwrap_err ().to_string (), "Vertex error: vertex already exists but has a different id");
+
+        let b_id = g.add_vertex_raw (a_id + 10, String::from ("b"), None).expect ("Failed to add_vertex_raw");
+
+        assert_eq! (b_id, a_id + 10);
+        assert! (g.has_vertex ("b"));
+        assert_eq! (g.vertex_label (&b_id).expect ("Failed to get vertex label"), String::from ("b"));
+
+        let c_id = g.add_vertex (String::from ("c"), None).expect ("Failed to add vertex 'c'");
+        assert_eq! (c_id, b_id + 1);
+    }
+
+    #[test]
     fn test_sources_and_sinks ()
     {
         init ();
@@ -1656,6 +1761,31 @@ mod tests
         assert! (g.has_edge (&el));
         assert_eq! (el, (String::from ("b"), String::from ("a")));
         assert_eq! (g.edge_label ( &(va, vb) ).unwrap_err ().to_string (), "Edge error: No edge found between 1 and 2");
+    }
+
+    #[test]
+    fn test_edge_labelled_raw ()
+    {
+        init ();
+        let mut g = LabelledGraph::new ();
+
+        assert_eq! (g.add_edge_raw (1, String::from ("a"), 0, String::from ("a"), None, 0).unwrap_err ().to_string (), "Edge error: edge vertices must be distinct");
+        assert_eq! (g.add_edge_raw (0, String::from ("b"), 0, String::from ("a"), None, 0).unwrap_err ().to_string (), "Edge error: edge vertex ids must be distinct");
+
+        g.add_edge_raw (1, String::from ("b"), 0, String::from ("a"), None, 0).expect ("Failed to add edge b -> a");
+
+        let va = g.vertex ("a").expect ("Failed to get vertex id for a");
+        let vb = g.vertex ("b").expect ("Failed to get vertex id for b");
+
+        let el = g.edge_label ( &(vb, va) ).expect ("Failed to get edge_labels for b -> a");
+
+        assert! (g.has_edge (&el));
+        assert! (g.add_edge_raw (1, String::from ("b"), 0, String::from ("a"), None, 0).is_ok ());
+
+        assert_eq! (g.add_edge_raw (2, String::from ("b"), 0, String::from ("a"), None, 0).unwrap_err ().to_string (), "Vertex error: vertex already exists but has a different id");
+        assert_eq! (g.add_edge_raw (1, String::from ("c"), 0, String::from ("a"), None, 0).unwrap_err ().to_string (), "Vertex error: vertex id already exists but has a different label");
+        assert_eq! (g.add_edge_raw (1, String::from ("b"), 2, String::from ("a"), None, 0).unwrap_err ().to_string (), "Vertex error: vertex already exists but has a different id");
+        assert_eq! (g.add_edge_raw (1, String::from ("b"), 0, String::from ("c"), None, 0).unwrap_err ().to_string (), "Vertex error: vertex id already exists but has a different label");
     }
 
     #[test]
