@@ -37,6 +37,94 @@ impl PartialOrd for MultiSourceState {
     }
 }
 
+pub fn all_shortest_paths<G: graph::GraphAny> (g: &G, sources: &collections::HashSet<usize>)
+    -> Result<collections::HashMap<usize, (collections::HashMap<usize, i64>, collections::HashMap<usize, collections::HashSet<Vec<usize>>>)>, error::GraphError>
+{
+    let mut r = collections::HashMap::<usize, (collections::HashMap<usize,i64>, collections::HashMap<usize, collections::HashSet<Vec<usize>>>)>::new ();
+    let mut fringe = collections::BinaryHeap::<MultiSourceState>::new ();
+
+    for source in sources
+    {
+        fringe.push (MultiSourceState { cost: 0, source: *source, v: *source });
+        r.insert (*source, ( collections::HashMap::<usize,i64>::from ([ ( *source, 0 ) ]), collections::HashMap::<usize, collections::HashSet<Vec<usize>>>::from ([ ( *source, collections::HashSet::<Vec<usize>>::from ([ Vec::from ([*source]) ]) ) ])) );
+    }
+
+    while let Some (MultiSourceState { cost, source, v }) = fringe.pop ()
+    {
+        if cost > *r.get (&source).unwrap ().0.get (&v).unwrap ()
+        {
+            continue;
+        }
+        else
+        {
+            for v_child in g.adjacent (&v)?
+            {
+                let e = (v, v_child);
+                let ew = g.weight (&e)?;
+
+                let mss_next = MultiSourceState { cost: cost + ew, source: source, v: v_child };
+
+                let paths_nxt = r.get (&source).unwrap ().1.get (&v_child)
+                    .cloned ()
+                    .unwrap_or (collections::HashSet::<Vec<usize>>::new ())
+                    .into_iter ()
+                    .filter (|x| {
+                            let mut xr = x.iter ().rev ();
+                            let _ = xr.next ();
+                            if let Some (sl) = xr.next () { sl != &v } else { false }
+                        })
+                    .collect::<collections::HashSet::<Vec<_>>> ();
+
+                let maybe_len_shortest_path = paths_nxt.iter ()
+                    .filter (|&x| x.last ().unwrap () == &mss_next.v)
+                    .map (|x| x.len ())
+                    .min ();
+
+                let paths_old = r.get (&source).unwrap ().1.get (&v)
+                    .ok_or (error::GraphError::AlgorithmError (format! ("Path for {} not found for source {}", v, source)))?;
+
+                let paths_new = paths_old.iter ()
+                    .filter (|&x| !x.contains (&mss_next.v))
+                    .filter (|&x| { if let Some (lsp) = maybe_len_shortest_path { x.len () < lsp } else { true } })
+                    .cloned ()
+                    .collect::<collections::HashSet::<Vec<usize>>> ();
+
+                let paths_combined = paths_new.iter ()
+                    .fold (paths_nxt, |mut acc, item| {
+                        let mut item_new = item.clone ();
+                        match item.last ()
+                        {
+                            Some (v_last) if g.has_edge_raw ( &( *v_last, mss_next.v) ) => item_new.push (mss_next.v),
+                            None => item_new.push (mss_next.v),
+                            _ => {}
+                        }
+                        acc.insert (item_new);
+                        acc
+                    });
+
+                if let Some (dist_next) = r.get (&source).unwrap ().0.get (&mss_next.v).copied ()
+                {
+                    if mss_next.cost <= dist_next && !paths_new.is_empty ()
+                    {
+                        r.get_mut (&source).unwrap ().0.insert (mss_next.v, mss_next.cost);
+                        r.get_mut (&source).unwrap ().1.insert (mss_next.v, paths_combined);
+                        fringe.push (mss_next);
+                    }
+                }
+                else
+                {
+                    // dist_next is infinite
+                    r.get_mut (&source).unwrap ().0.insert (mss_next.v, mss_next.cost);
+                    r.get_mut (&source).unwrap ().1.insert (mss_next.v, paths_combined);
+                    fringe.push (mss_next);
+                }
+            }
+        }
+    }
+
+    Ok (r)
+}
+
 pub fn bfs_edges<G: graph::GraphAny> (g: &G, source: usize)
     -> Result<Vec<(usize, usize)>, error::GraphError>
 {
@@ -395,6 +483,187 @@ mod tests
         let solutions = collections::HashSet::from ([vec![2,1,3]]);
         let r = super::topological_sort (&g).unwrap ();
         assert! (solutions.contains (&r), "{:?} not found in {:?}", r, solutions);
+    }
+
+    #[test]
+    fn test_all_shortest_paths ()
+    {
+        init ();
+        let mut g = graph::Graph::new ();
+        //    1
+        //   /  \
+        //  *    *
+        // 2     3
+        // |     |
+        // *     *
+        // 4     5
+        //  \   /
+        //   * *
+        //    6
+        g.add_edge_raw (1,2,0).expect ("Failed to add edge 1 -> 2");
+        g.add_edge_raw (1,3,0).expect ("Failed to add edge 1 -> 3");
+        g.add_edge_raw (2,4,0).expect ("Failed to add edge 2 -> 4");
+        g.add_edge_raw (3,5,0).expect ("Failed to add edge 3 -> 5");
+        g.add_edge_raw (4,6,0).expect ("Failed to add edge 4 -> 6");
+        g.add_edge_raw (5,6,0).expect ("Failed to add edge 5 -> 6");
+
+        let solution = collections::HashMap::<usize, (collections::HashMap<usize,i64>, collections::HashMap<usize,collections::HashSet<Vec<usize>>>)>::from ([
+            ( 1, (
+                    collections::HashMap::<usize, i64>::from ([
+                        ( 1, 0 ),
+                        ( 2, 0 ),
+                        ( 3, 0 ),
+                        ( 4, 0 ),
+                        ( 5, 0 ),
+                        ( 6, 0 ),
+                    ]),
+                    collections::HashMap::<usize, collections::HashSet<Vec<usize>>>::from ([
+                        ( 1, collections::HashSet::<Vec<usize>>::from ([ Vec::from ([1]) ]) ),
+                        ( 2, collections::HashSet::<Vec<usize>>::from ([ Vec::from ([1, 2]) ]) ),
+                        ( 3, collections::HashSet::<Vec<usize>>::from ([ Vec::from ([1, 3]) ]) ),
+                        ( 4, collections::HashSet::<Vec<usize>>::from ([ Vec::from ([1, 2, 4]) ]) ),
+                        ( 5, collections::HashSet::<Vec<usize>>::from ([ Vec::from ([1, 3, 5]) ]) ),
+                        ( 6, collections::HashSet::<Vec<usize>>::from ([ Vec::from ([1, 2, 4, 6]), Vec::from ([1, 3, 5, 6]) ]) ),
+                    ])
+                )
+            ),
+        ]);
+
+        let sources = collections::HashSet::from ([1]);
+        let r = super::all_shortest_paths (&g, &sources).unwrap ();
+
+        assert_eq! (r, solution);
+    }
+
+    #[test]
+    fn test_all_shortest_paths_u ()
+    {
+        init ();
+        let mut g = graph::UGraph::new ();
+        //   1
+        //  /
+        // 2   3
+        // |   |
+        // 4   5
+        //  \ /
+        //   6
+        g.add_edge_raw (1,2,0).expect ("Failed to add edge 1 -> 2");
+        g.add_edge_raw (2,4,0).expect ("Failed to add edge 2 -> 4");
+        g.add_edge_raw (3,5,0).expect ("Failed to add edge 3 -> 5");
+        g.add_edge_raw (4,6,0).expect ("Failed to add edge 4 -> 6");
+        g.add_edge_raw (5,6,0).expect ("Failed to add edge 5 -> 6");
+
+        let solution = collections::HashMap::<usize, (collections::HashMap<usize,i64>, collections::HashMap<usize,collections::HashSet<Vec<usize>>>)>::from ([
+            ( 1, (
+                    collections::HashMap::<usize, i64>::from ([
+                        ( 1, 0 ),
+                        ( 2, 0 ),
+                        ( 3, 0 ),
+                        ( 4, 0 ),
+                        ( 5, 0 ),
+                        ( 6, 0 ),
+                    ]),
+                    collections::HashMap::<usize, collections::HashSet<Vec<usize>>>::from ([
+                        ( 1, collections::HashSet::<Vec<usize>>::from ([ Vec::from ([1]) ]) ),
+                        ( 2, collections::HashSet::<Vec<usize>>::from ([ Vec::from ([1, 2]) ]) ),
+                        ( 4, collections::HashSet::<Vec<usize>>::from ([ Vec::from ([1, 2, 4]) ]) ),
+                        ( 6, collections::HashSet::<Vec<usize>>::from ([ Vec::from ([1, 2, 4, 6]) ]) ),
+                        ( 5, collections::HashSet::<Vec<usize>>::from ([ Vec::from ([1, 2, 4, 6, 5]) ]) ),
+                        ( 3, collections::HashSet::<Vec<usize>>::from ([ Vec::from ([1, 2, 4, 6, 5, 3]) ]) ),
+                    ])
+                )
+            ),
+            ( 3, (
+                collections::HashMap::<usize, i64>::from ([
+                        ( 1, 0 ),
+                        ( 2, 0 ),
+                        ( 3, 0 ),
+                        ( 4, 0 ),
+                        ( 5, 0 ),
+                        ( 6, 0 ),
+                    ]),
+                    collections::HashMap::<usize, collections::HashSet<Vec<usize>>>::from ([
+                        ( 3, collections::HashSet::<Vec<usize>>::from ([ Vec::from ([3]) ]) ),
+                        ( 5, collections::HashSet::<Vec<usize>>::from ([ Vec::from ([3, 5]) ]) ),
+                        ( 6, collections::HashSet::<Vec<usize>>::from ([ Vec::from ([3, 5, 6]) ]) ),
+                        ( 4, collections::HashSet::<Vec<usize>>::from ([ Vec::from ([3, 5, 6, 4]) ]) ),
+                        ( 2, collections::HashSet::<Vec<usize>>::from ([ Vec::from ([3, 5, 6, 4, 2]) ]) ),
+                        ( 1, collections::HashSet::<Vec<usize>>::from ([ Vec::from ([3, 5, 6, 4, 2, 1]) ]) ),
+                    ])
+                )
+            )
+        ]);
+
+        let sources = collections::HashSet::from ([1,3]);
+        let r = super::all_shortest_paths (&g, &sources).unwrap ();
+
+        assert_eq! (r, solution);
+    }
+
+    #[test]
+    fn test_all_shortest_paths_cycle_u ()
+    {
+        init ();
+        let mut g = graph::UGraph::new ();
+        //   1
+        //  /
+        // 2   3
+        // |   |
+        // 4 - 5
+        //  \ /
+        //   6
+        g.add_edge_raw (1,2,0).expect ("Failed to add edge 1 -> 2");
+        g.add_edge_raw (2,4,0).expect ("Failed to add edge 2 -> 4");
+        g.add_edge_raw (3,5,0).expect ("Failed to add edge 3 -> 5");
+        g.add_edge_raw (4,5,0).expect ("Failed to add edge 4 -> 5");
+        g.add_edge_raw (4,6,0).expect ("Failed to add edge 4 -> 6");
+        g.add_edge_raw (5,6,0).expect ("Failed to add edge 5 -> 6");
+
+        let solution = collections::HashMap::<usize, (collections::HashMap<usize,i64>, collections::HashMap<usize,collections::HashSet<Vec<usize>>>)>::from ([
+            ( 1, (
+                    collections::HashMap::<usize, i64>::from ([
+                        ( 1, 0 ),
+                        ( 2, 0 ),
+                        ( 3, 0 ),
+                        ( 4, 0 ),
+                        ( 5, 0 ),
+                        ( 6, 0 ),
+                    ]),
+                    collections::HashMap::<usize, collections::HashSet<Vec<usize>>>::from ([
+                        ( 1, collections::HashSet::<Vec<usize>>::from ([ Vec::from ([1]) ]) ),
+                        ( 2, collections::HashSet::<Vec<usize>>::from ([ Vec::from ([1, 2]) ]) ),
+                        ( 4, collections::HashSet::<Vec<usize>>::from ([ Vec::from ([1, 2, 4]) ]) ),
+                        ( 5, collections::HashSet::<Vec<usize>>::from ([ Vec::from ([1, 2, 4, 5]) ]) ),
+                        ( 6, collections::HashSet::<Vec<usize>>::from ([ Vec::from ([1, 2, 4, 6]) ]) ),
+                        ( 3, collections::HashSet::<Vec<usize>>::from ([ Vec::from ([1, 2, 4, 5, 3]) ]) ),
+                    ])
+                )
+            ),
+            ( 3, (
+                collections::HashMap::<usize, i64>::from ([
+                        ( 1, 0 ),
+                        ( 2, 0 ),
+                        ( 3, 0 ),
+                        ( 4, 0 ),
+                        ( 5, 0 ),
+                        ( 6, 0 ),
+                    ]),
+                    collections::HashMap::<usize, collections::HashSet<Vec<usize>>>::from ([
+                        ( 3, collections::HashSet::<Vec<usize>>::from ([ Vec::from ([3]) ]) ),
+                        ( 5, collections::HashSet::<Vec<usize>>::from ([ Vec::from ([3, 5]) ]) ),
+                        ( 4, collections::HashSet::<Vec<usize>>::from ([ Vec::from ([3, 5, 4]) ]) ),
+                        ( 6, collections::HashSet::<Vec<usize>>::from ([ Vec::from ([3, 5, 6]) ]) ),
+                        ( 2, collections::HashSet::<Vec<usize>>::from ([ Vec::from ([3, 5, 4, 2]) ]) ),
+                        ( 1, collections::HashSet::<Vec<usize>>::from ([ Vec::from ([3, 5, 4, 2, 1]) ]) ),
+                    ])
+                )
+            )
+        ]);
+
+        let sources = collections::HashSet::from ([1,3]);
+        let r = super::all_shortest_paths (&g, &sources).unwrap ();
+
+        assert_eq! (r, solution);
     }
 
     #[test]
