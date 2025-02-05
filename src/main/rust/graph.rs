@@ -327,6 +327,52 @@ impl Graph
         }
     }
 
+    pub fn vertex_identification (&mut self, m: &collections::BTreeSet<usize>)
+        -> Result<(), crate::error::GraphError>
+    {
+        let mut it = m.iter ();
+        if let Some (tv) = it.next ()
+        {
+            while let Some (mv) = it.next ()
+            {
+                for mvi in self.inbound (mv)?
+                {
+                    let me = (mvi, *mv);
+                    let te = (mvi, *tv);
+                    let w = self.edges.get (&me)
+                        .copied ()
+                        .ok_or (crate::error::GraphError::DataError (format! ("Failed to find inbound merging edge: {:?}", me)))?;
+                    self.remove_edge_raw (&me.0, &me.1)?;
+                    if !self.has_edge_raw (&te)
+                    {
+                        self.add_edge_raw (te.0, te.1, w)?;
+                    }
+                }
+
+                for mvo in self.outbound (mv)?
+                {
+                    let me = (*mv, mvo);
+                    let te = (*tv, mvo);
+                    let w = self.edges.get (&me)
+                        .copied ()
+                        .ok_or (crate::error::GraphError::DataError (format! ("Failed to find outbound merging edge: {:?}", me)))?;
+                    self.remove_edge_raw (&me.0, &me.1)?;
+                    if !self.has_edge_raw (&te)
+                    {
+                        self.add_edge_raw (te.0, te.1, w)?;
+                    }
+                }
+
+                self.remove_vertex_raw (mv)?;
+            }
+            Ok (())
+        }
+        else
+        {
+            Err (crate::error::GraphError::DataError (String::from ("No vertices to merge")))
+        }
+    }
+
     pub fn neighbours (&self, a: &usize)
         -> Result<collections::HashSet<usize>, crate::error::GraphError>
     {
@@ -1618,6 +1664,67 @@ mod tests
         let c_id = g.add_vertex (String::from ("c"), None).expect ("Failed to add vertex 'c'");
         assert_eq! (c_id, b_id + 1);
     }
+
+    #[test]
+    fn test_vertex_identification ()
+    {
+        init ();
+        let mut g = Graph::new ();
+        g.add_edge_raw (2,1,0).expect ("Failed to add edge 2 -> 1");
+        g.add_edge_raw (3,1,0).expect ("Failed to add edge 3 -> 1");
+
+
+        g.vertex_identification (&collections::BTreeSet::from ([2,3])).expect ("Merge failed");
+        let expected_edges = collections::HashMap::<(usize, usize), i64>::from ([
+            ( (2,1), 0 )
+        ]);
+
+        assert_eq! (g.vertices (), &(1..3).collect::<collections::HashSet<usize>> (), "Failed to obtain correct vertex ids");
+        assert_eq! (g.edges (), &expected_edges);
+    }
+
+    #[test]
+    fn test_vertex_identification_multi ()
+    {
+        init ();
+        let mut ga = Graph::new ();
+        ga.add_edge_raw (2,1,0).expect ("Failed to add edge 2 -> 1");
+        ga.add_edge_raw (3,1,0).expect ("Failed to add edge 3 -> 1");
+        ga.add_edge_raw (4,1,0).expect ("Failed to add edge 4 -> 1");
+
+        let mut gb = ga.clone ();
+        ga.vertex_identification (&collections::BTreeSet::from ([2,3,4])).expect ("Merge a failed");
+        gb.vertex_identification (&collections::BTreeSet::from ([2,4,3])).expect ("Merge b failed");
+        let expected_edges = collections::HashMap::<(usize, usize), i64>::from ([
+            ( (2,1), 0 )
+        ]);
+
+        assert_eq! (ga.vertices (), &(1..3).collect::<collections::HashSet<usize>> (), "Failed to obtain correct vertex ids a");
+        assert_eq! (ga.edges (), &expected_edges, "Unexpected edges b");
+        assert_eq! (gb.vertices (), &(1..3).collect::<collections::HashSet<usize>> (), "Failed to obtain correct vertex ids a");
+        assert_eq! (gb.edges (), &expected_edges, "Unexpected edges b");
+    }
+
+    #[test]
+    fn test_vertex_identification_inbound ()
+    {
+        init ();
+        let mut g = Graph::new ();
+        g.add_edge_raw (2,1,0).expect ("Failed to add edge 2 -> 1");
+        g.add_edge_raw (3,1,0).expect ("Failed to add edge 3 -> 1");
+        g.add_edge_raw (4,2,0).expect ("Failed to add edge 4 -> 2");
+        g.add_edge_raw (4,3,0).expect ("Failed to add edge 4 -> 3");
+
+        g.vertex_identification (&collections::BTreeSet::from ([2,3])).expect ("Merge failed");
+        let expected_edges = collections::HashMap::<(usize, usize), i64>::from ([
+            ( (2,1), 0 ),
+            ( (4,2), 0 )
+        ]);
+
+        assert_eq! (g.vertices (), &collections::HashSet::<usize>::from ([1,2,4]), "Failed to obtain correct vertex ids");
+        assert_eq! (g.edges (), &expected_edges);
+    }
+
 
     #[test]
     fn test_sources_and_sinks ()
