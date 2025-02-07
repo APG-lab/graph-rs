@@ -970,6 +970,27 @@ impl LabelledGraph
         }
     }
 
+    pub fn edge (&self, (a, b): &(String, String))
+        -> Result<(usize, usize), crate::error::GraphError>
+    {
+        match ( self.vertex_lookup.get (a), self.vertex_lookup.get (b) )
+        {
+            (Some (a_id), Some (b_id)) => {
+                if self.edge_attrs.contains_key ( &(*a_id, *b_id) )
+                {
+                    Ok ( (*a_id, *b_id) )
+                }
+                else
+                {
+                    Err (crate::error::GraphError::EdgeError (format! ("Could not find edge attributes for ({}:{},{}:{})", *a_id, a, *b_id, b)))
+                }
+            },
+            (Some (a_id), None) => Err (crate::error::GraphError::EdgeError (format! ("Found vertex a: {}:{}. Failed to find vertex b: {}", a_id, a, b))),
+            (None, Some (b_id)) => Err (crate::error::GraphError::EdgeError (format! ("failed to find vertex a: {}. Found vertex b: {}:{}", a, b_id, b))),
+            _ => Err (crate::error::GraphError::EdgeError (format! ("failed to find both vertices: {} {}", a, b)))
+        }
+    }
+
     pub fn graph (&self)
         -> &Graph
     {
@@ -980,6 +1001,19 @@ impl LabelledGraph
         -> &collections::HashSet <usize>
     {
         self.graph.vertices ()
+    }
+
+    pub fn vertex (&self, a: &str)
+        -> Result<usize, crate::error::GraphError>
+    {
+        if let Some (a_id) = self.vertex_lookup.get (a)
+        {
+            Ok (*a_id)
+        }
+        else
+        {
+            Err (crate::error::GraphError::VertexError (format! ("Failed to find vertex: {}", a)))
+        }
     }
 
     pub fn vertex_attrs (&self, a: &str)
@@ -1013,19 +1047,6 @@ impl LabelledGraph
                 },
                 Err (e) => Err (e)
             }
-        }
-        else
-        {
-            Err (crate::error::GraphError::VertexError (format! ("Failed to find vertex: {}", a)))
-        }
-    }
-
-    pub fn vertex (&self, a: &str)
-        -> Result<usize, crate::error::GraphError>
-    {
-        if let Some (a_id) = self.vertex_lookup.get (a)
-        {
-            Ok (*a_id)
         }
         else
         {
