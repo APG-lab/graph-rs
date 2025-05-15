@@ -33,6 +33,18 @@ impl AttributeValue
         }
     }
 
+    pub fn set_bool_literal (&mut self, val: bool)
+    {
+        if let AttributeValue::BooleanLiteral (ref mut wrapped_val) = *self
+        {
+            *wrapped_val = val;
+        }
+        else
+        {
+            unreachable! ("Must only be called with BooleanLiteral");
+        }
+    }
+
     pub fn get_integer_literal (&self)
     -> i64
     {
