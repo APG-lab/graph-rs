@@ -339,6 +339,28 @@ impl Graph
         }
     }
 
+    pub fn incident (&self, a: &usize)
+        -> Result<collections::HashSet<(usize, usize)>, crate::error::GraphError>
+    {
+        if self.vertices.contains (a)
+        {
+            let mut r = collections::HashSet::<(usize,usize)>::new ();
+            if let Some (children) = self.inbound.get (a)
+            {
+                r.extend (children.iter ().map (|&x| (x, *a)));
+            }
+            if let Some (parents) = self.outbound.get (a)
+            {
+                r.extend (parents.iter ().map (|&x| (*a, x)));
+            }
+            Ok (r)
+        }
+        else
+        {
+            Err (crate::error::GraphError::VertexError (format! ("Vertex: {} not found in graph", a)))
+        }
+    }
+
     pub fn vertex_identification (&mut self, m: &collections::BTreeSet<usize>)
         -> Result<(), crate::error::GraphError>
     {
