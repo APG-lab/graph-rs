@@ -1055,7 +1055,7 @@ impl LabelledGraph
     {
         if let Some (a_id) = self.vertex_lookup.get (a)
         {
-            match self.vertex_attrs.get ( &a_id ).ok_or (crate::error::GraphError::VertexError (format! ("Could not find vertex attributes for {}:{}", *a_id, a)))
+            match self.vertex_attrs.get (&a_id).ok_or (crate::error::GraphError::VertexError (format! ("Could not find vertex attributes for {}:{}", a_id, a)))
             {
                 Ok (vertex_attrs) => {
                     Ok ( (*a_id, vertex_attrs ) )
@@ -1074,7 +1074,7 @@ impl LabelledGraph
     {
         if let Some (a_id) = self.vertex_lookup.get (a)
         {
-            match self.vertex_attrs.get_mut ( &a_id ).ok_or (crate::error::GraphError::VertexError (format! ("Could not find vertex attributes for {}:{}", *a_id, a)))
+            match self.vertex_attrs.get_mut (&a_id).ok_or (crate::error::GraphError::VertexError (format! ("Could not find vertex attributes for {}:{}", a_id, a)))
             {
                 Ok (vertex_attrs) => {
                     Ok ( (*a_id, vertex_attrs) )
@@ -1086,6 +1086,18 @@ impl LabelledGraph
         {
             Err (crate::error::GraphError::VertexError (format! ("Failed to find vertex: {}", a)))
         }
+    }
+
+    pub fn vertex_attrs_raw (&self, a_id: &usize)
+        -> Result<&collections::HashMap::<String, AttributeValue>, crate::error::GraphError>
+    {
+        self.vertex_attrs.get (a_id).ok_or (crate::error::GraphError::VertexError (format! ("Could not find vertex attributes for {}", a_id)))
+    }
+
+    pub fn vertex_attrs_raw_mut (&mut self, a_id: &usize)
+        -> Result<&mut collections::HashMap::<String, AttributeValue>, crate::error::GraphError>
+    {
+        self.vertex_attrs.get_mut (&a_id).ok_or (crate::error::GraphError::VertexError (format! ("Could not find vertex attributes for {}", a_id)))
     }
 
     pub fn vertex_label (&self, a_id: &usize)
@@ -1408,12 +1420,25 @@ impl LabelledUGraph
         self.graph.vertices ()
     }
 
+    pub fn vertex (&self, a: &str)
+        -> Result<usize, crate::error::GraphError>
+    {
+        if let Some (a_id) = self.vertex_lookup.get (a)
+        {
+            Ok (*a_id)
+        }
+        else
+        {
+            Err (crate::error::GraphError::VertexError (format! ("Failed to find vertex: {}", a)))
+        }
+    }
+
     pub fn vertex_attrs (&self, a: &str)
         -> Result<(usize, &collections::HashMap::<String, AttributeValue>), crate::error::GraphError>
     {
         if let Some (a_id) = self.vertex_lookup.get (a)
         {
-            match self.vertex_attrs.get ( &a_id ).ok_or (crate::error::GraphError::VertexError (format! ("Could not find vertex attributes for {}:{}", *a_id, a)))
+            match self.vertex_attrs.get (&a_id).ok_or (crate::error::GraphError::VertexError (format! ("Could not find vertex attributes for {}:{}", a_id, a)))
             {
                 Ok (vertex_attrs) => {
                     Ok ( (*a_id, vertex_attrs ) )
@@ -1432,7 +1457,7 @@ impl LabelledUGraph
     {
         if let Some (a_id) = self.vertex_lookup.get (a)
         {
-            match self.vertex_attrs.get_mut ( &a_id ).ok_or (crate::error::GraphError::VertexError (format! ("Could not find vertex attributes for {}:{}", *a_id, a)))
+            match self.vertex_attrs.get_mut (&a_id).ok_or (crate::error::GraphError::VertexError (format! ("Could not find vertex attributes for {}:{}", a_id, a)))
             {
                 Ok (vertex_attrs) => {
                     Ok ( (*a_id, vertex_attrs) )
@@ -1446,17 +1471,16 @@ impl LabelledUGraph
         }
     }
 
-    pub fn vertex (&self, a: &str)
-        -> Result<usize, crate::error::GraphError>
+    pub fn vertex_attrs_raw (&self, a_id: &usize)
+        -> Result<&collections::HashMap::<String, AttributeValue>, crate::error::GraphError>
     {
-        if let Some (a_id) = self.vertex_lookup.get (a)
-        {
-            Ok (*a_id)
-        }
-        else
-        {
-            Err (crate::error::GraphError::VertexError (format! ("Failed to find vertex: {}", a)))
-        }
+        self.vertex_attrs.get (&a_id).ok_or (crate::error::GraphError::VertexError (format! ("Could not find vertex attributes for {}", a_id)))
+    }
+
+    pub fn vertex_attrs_raw_mut (&mut self, a_id: &usize)
+        -> Result<&mut collections::HashMap::<String, AttributeValue>, crate::error::GraphError>
+    {
+        self.vertex_attrs.get_mut (&a_id).ok_or (crate::error::GraphError::VertexError (format! ("Could not find vertex attributes for {}", a_id)))
     }
 
     pub fn vertex_label (&self, a_id: &usize)
