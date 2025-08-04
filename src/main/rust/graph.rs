@@ -1,5 +1,5 @@
 
-use log::debug;
+//use log::debug;
 use serde::{Serialize,Deserialize};
 use std::collections;
 use std::fmt;
@@ -873,7 +873,7 @@ impl LabelledGraph
     pub fn add_edge_weighted (&mut self, a: String, b: String, attrs: Option<collections::HashMap::<String, AttributeValue>>, weight: i64)
         -> Result<(usize, usize), crate::error::GraphError>
     {
-        debug! ("add {} to {}", a , b);
+        //debug! ("add {} to {}", a , b);
         if a == b
         {
             Err (crate::error::GraphError::EdgeError (String::from ("edge vertices must be distinct")))
@@ -1356,7 +1356,7 @@ impl LabelledUGraph
     pub fn add_edge_weighted (&mut self, a: String, b: String, attrs: Option<collections::HashMap::<String, AttributeValue>>, weight: i64)
         -> Result<(usize, usize), crate::error::GraphError>
     {
-        debug! ("add {} to {}", a , b);
+        //debug! ("add {} to {}", a , b);
         if a == b
         {
             Err (crate::error::GraphError::EdgeError (String::from ("edge vertices must be distinct")))
