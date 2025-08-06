@@ -227,6 +227,24 @@ impl fmt::Display for AttributeValue
     }
 }
 
+pub trait MaybeAttributeValue
+{
+    fn maybe_string_literal (&self) -> Result<Option<String>, crate::error::GraphError>;
+}
+
+impl MaybeAttributeValue for Option<AttributeValue>
+{
+    fn maybe_string_literal (&self) -> Result<Option<String>, crate::error::GraphError>
+    {
+        match self
+        {
+            None => Ok (None),
+            Some (AttributeValue::StringLiteral (val)) => Ok (Some (val.to_string ())),
+            Some (_) => Err (crate::error::GraphError::DataError (String::from ("Not a StringLiteral")))
+        }
+    }
+}
+
 #[derive(Clone,Debug,Deserialize,Serialize,PartialEq)]
 pub struct Graph
 {
