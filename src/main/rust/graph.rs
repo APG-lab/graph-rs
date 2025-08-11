@@ -1156,6 +1156,25 @@ impl LabelledGraph
         }
     }
 
+    pub fn edge_attrs_raw (&self, ev @ (a_id, b_id): &(usize, usize))
+        -> Result<&collections::HashMap::<String, AttributeValue>, crate::error::GraphError>
+    {
+        if let Some (ea) = self.edge_attrs.get (ev)
+        {
+            Ok (ea)
+        }
+        else
+        {
+            match ( self.vertex_label.get (a_id), self.vertex_label.get (b_id) )
+            {
+                (Some (a), Some (b)) => Err (crate::error::GraphError::EdgeError (format! ("Found both vertices {}:{} {}:{} but no edge", a_id, a, b_id, b))),
+                (Some (a), None) => Err (crate::error::GraphError::EdgeError (format! ("Found vertex a: {}:{}. Failed to find vertex b: {}", a_id, a, b_id))),
+                (None, Some (b)) => Err (crate::error::GraphError::EdgeError (format! ("failed to find vertex a: {}. Found vertex b: {}:{}", a_id, b_id, b))),
+                _ => Err (crate::error::GraphError::EdgeError (format! ("failed to find both vertices: {} {}", a_id, b_id)))
+            }
+        }
+    }
+
     pub fn edge_attrs_mut (&mut self, (a, b): &(String, String))
         -> Result<( (usize, usize), &mut collections::HashMap::<String, AttributeValue>), crate::error::GraphError>
     {
