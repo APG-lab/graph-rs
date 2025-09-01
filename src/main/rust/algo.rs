@@ -253,6 +253,32 @@ pub fn connected_components (g: &graph::UGraph)
     Ok (r)
 }
 
+pub fn dfs_edges (g: &graph::Graph, source: usize)
+    -> Result<Vec<(usize, usize)>, error::GraphError>
+{
+    let mut r = Vec::<(usize, usize)>::new ();
+    let mut visited = collections::HashSet::<usize>::new ();
+    let mut queue = collections::VecDeque::<(usize, usize)>::from (vec![(source, 0)]);
+
+    while let Some ( (parent, current_depth ) ) = queue.front ().copied ()
+    {
+        let mut children = g.outbound (&parent)?.into_iter ().collect::<Vec<_>> ();
+        children.sort ();
+        for child in children
+        {
+            if !visited.contains (&child)
+            {
+                r.push ( (parent, child) );
+                visited.insert (child);
+                queue.push_back ( (child, current_depth + 1) );
+            }
+        }
+        queue.pop_front ();
+    }
+
+    Ok (r)
+}
+
 pub fn fast_label_propagation<G: graph::GraphAny> (g: &G, seed: &mut u64)
     -> Result<(collections::HashMap<usize, usize>, collections::HashMap<usize, collections::HashSet<usize>>), error::GraphError>
 {
@@ -778,6 +804,32 @@ mod tests
         let mut r = super::connected_components (&g).unwrap ();
         r.sort_by_key (|k| *k.iter ().min ().expect ("Failed to find min of component"));
         assert_eq! (r,solution);
+    }
+
+    #[test]
+    fn test_dfs ()
+    {
+        init ();
+        let mut g = graph::Graph::new ();
+        //       1
+        //      / \
+        //     *   *
+        //    2     3
+        //   / \
+        //  *   *
+        // 4     5
+        g.add_edge_raw (1,2,0).expect ("Failed to add edge 1 -> 2");
+        g.add_edge_raw (1,3,0).expect ("Failed to add edge 1 -> 3");
+        g.add_edge_raw (2,4,0).expect ("Failed to add edge 2 -> 4");
+        g.add_edge_raw (2,5,0).expect ("Failed to add edge 2 -> 5");
+
+        let dfs_edges_root = vec![ ( 1, 2 ), ( 1, 3 ), ( 2, 4 ), ( 2, 5 ) ];
+        let dfs_edges_mid = vec![ ( 2,4 ), ( 2,5 ) ];
+        let dfs_edges_leaf = Vec::<(usize,usize)>::new ();
+
+        assert_eq! (super::dfs_edges (&g, 1).unwrap (), dfs_edges_root, "Failed dfs root");
+        assert_eq! (super::dfs_edges (&g, 2).unwrap (), dfs_edges_mid, "Failed dfs mid");
+        assert_eq! (super::dfs_edges (&g, 4).unwrap (), dfs_edges_leaf, "Failed dfs leaf");
     }
 
     #[test]
