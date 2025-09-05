@@ -256,24 +256,36 @@ pub fn connected_components (g: &graph::UGraph)
 pub fn dfs_edges (g: &graph::Graph, source: usize)
     -> Result<Vec<(usize, usize)>, error::GraphError>
 {
-    let mut r = Vec::<(usize, usize)>::new ();
-    let mut visited = collections::HashSet::<usize>::new ();
-    let mut queue = collections::VecDeque::<(usize, usize)>::from (vec![(source, 0)]);
+    let children = g.vertices ().iter ().fold (collections::HashMap::<usize, Vec<usize>>::new (), |mut acc, item| {
+        let mut outbound_sorted = g.outbound (item).unwrap ().into_iter ().collect::<Vec<_>> ();
+        outbound_sorted.sort ();
+        acc.insert (*item, outbound_sorted);
+        acc
+        });
+    let mut children_iters = children.iter ().fold (collections::HashMap::<usize, std::slice::Iter<'_, usize>>::new (), |mut acc, (k, v)| {
+        acc.insert (*k, v.iter () );
+        acc
+    });
 
-    while let Some ( (parent, current_depth ) ) = queue.front ().copied ()
+    let mut visited = collections::HashSet::<usize>::new ();
+    let mut queue = collections::VecDeque::<(usize, usize, usize)>::from (vec![(0, source, source)]);
+    let mut r = Vec::<(usize, usize)>::new ();
+
+    while let Some ( (current_depth , parent, _) ) = queue.back ().copied ()
     {
-        let mut children = g.outbound (&parent)?.into_iter ().collect::<Vec<_>> ();
-        children.sort ();
-        for child in children
+        if let Some (child) = children_iters.get_mut (&parent).ok_or (error::GraphError::AlgorithmError (format! ("No outbound iter for {}", parent)))?.next ()
         {
-            if !visited.contains (&child)
+            if !visited.contains (child)
             {
-                r.push ( (parent, child) );
-                visited.insert (child);
-                queue.push_back ( (child, current_depth + 1) );
+                visited.insert (*child);
+                queue.push_back ( ( current_depth + 1, *child, parent) );
+                r.push ( (parent, *child) );
             }
         }
-        queue.pop_front ();
+        else
+        {
+            queue.pop_back ();
+        }
     }
 
     Ok (r)
@@ -823,13 +835,52 @@ mod tests
         g.add_edge_raw (2,4,0).expect ("Failed to add edge 2 -> 4");
         g.add_edge_raw (2,5,0).expect ("Failed to add edge 2 -> 5");
 
-        let dfs_edges_root = vec![ ( 1, 2 ), ( 1, 3 ), ( 2, 4 ), ( 2, 5 ) ];
+        let dfs_edges_root = vec![ ( 1, 2 ), ( 2, 4 ), ( 2, 5 ), ( 1, 3 ) ];
         let dfs_edges_mid = vec![ ( 2,4 ), ( 2,5 ) ];
         let dfs_edges_leaf = Vec::<(usize,usize)>::new ();
 
         assert_eq! (super::dfs_edges (&g, 1).unwrap (), dfs_edges_root, "Failed dfs root");
         assert_eq! (super::dfs_edges (&g, 2).unwrap (), dfs_edges_mid, "Failed dfs mid");
         assert_eq! (super::dfs_edges (&g, 4).unwrap (), dfs_edges_leaf, "Failed dfs leaf");
+    }
+
+    #[test]
+    fn test_dfs_more ()
+    {
+        init ();
+        let mut g = graph::Graph::new ();
+        //           1
+        //         / | \
+        //        *  *  *
+        //       2   5   9
+        //      /   / \   \
+        //     *   *   *   *
+        //    3    6    8  10
+        //   /     |
+        //  *      *
+        // 4       7
+        g.add_edge_raw (1,2 ,0).expect ("Failed to add edge 1 -> 2 ");
+        g.add_edge_raw (1,5 ,0).expect ("Failed to add edge 1 -> 5 ");
+        g.add_edge_raw (1,9 ,0).expect ("Failed to add edge 1 -> 9 ");
+        g.add_edge_raw (2,3 ,0).expect ("Failed to add edge 2 -> 3 ");
+        g.add_edge_raw (3,4 ,0).expect ("Failed to add edge 3 -> 4 ");
+        g.add_edge_raw (5,6 ,0).expect ("Failed to add edge 5 -> 6 ");
+        g.add_edge_raw (5,8 ,0).expect ("Failed to add edge 5 -> 8 ");
+        g.add_edge_raw (6,7 ,0).expect ("Failed to add edge 6 -> 7 ");
+        g.add_edge_raw (9,10,0).expect ("Failed to add edge 9 -> 10");
+        let dfs_edges = vec![
+            ( 1,  2 ),
+            ( 2,  3 ),
+            ( 3,  4 ),
+            ( 1,  5 ),
+            ( 5,  6 ),
+            ( 6,  7 ),
+            ( 5,  8 ),
+            ( 1,  9 ),
+            ( 9, 10 ),
+        ];
+
+        assert_eq! (super::dfs_edges (&g, 1).unwrap (), dfs_edges, "Failed dfs");
     }
 
     #[test]
