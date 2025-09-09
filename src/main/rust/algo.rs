@@ -254,7 +254,7 @@ pub fn connected_components (g: &graph::UGraph)
 }
 
 pub fn dfs_edges (g: &graph::Graph, source: usize)
-    -> Result<Vec<(usize, usize)>, error::GraphError>
+    -> Result<Vec<((usize, usize), usize)>, error::GraphError>
 {
     let children = g.vertices ().iter ().fold (collections::HashMap::<usize, Vec<usize>>::new (), |mut acc, item| {
         let mut outbound_sorted = g.outbound (item).unwrap ().into_iter ().collect::<Vec<_>> ();
@@ -269,7 +269,7 @@ pub fn dfs_edges (g: &graph::Graph, source: usize)
 
     let mut visited = collections::HashSet::<usize>::new ();
     let mut queue = collections::VecDeque::<(usize, usize, usize)>::from (vec![(0, source, source)]);
-    let mut r = Vec::<(usize, usize)>::new ();
+    let mut r = Vec::<((usize, usize), usize)>::new ();
 
     while let Some ( (current_depth , parent, _) ) = queue.back ().copied ()
     {
@@ -279,7 +279,7 @@ pub fn dfs_edges (g: &graph::Graph, source: usize)
             {
                 visited.insert (*child);
                 queue.push_back ( ( current_depth + 1, *child, parent) );
-                r.push ( (parent, *child) );
+                r.push ( ( (parent, *child), current_depth ) );
             }
         }
         else
@@ -835,9 +835,17 @@ mod tests
         g.add_edge_raw (2,4,0).expect ("Failed to add edge 2 -> 4");
         g.add_edge_raw (2,5,0).expect ("Failed to add edge 2 -> 5");
 
-        let dfs_edges_root = vec![ ( 1, 2 ), ( 2, 4 ), ( 2, 5 ), ( 1, 3 ) ];
-        let dfs_edges_mid = vec![ ( 2,4 ), ( 2,5 ) ];
-        let dfs_edges_leaf = Vec::<(usize,usize)>::new ();
+        let dfs_edges_root = vec![
+            ( ( 1, 2 ), 0 ),
+            ( ( 2, 4 ), 1 ),
+            ( ( 2, 5 ), 1 ),
+            ( ( 1, 3 ), 0 ),
+        ];
+        let dfs_edges_mid = vec![
+            ( ( 2,4 ), 0 ),
+            ( ( 2,5 ), 0 ),
+        ];
+        let dfs_edges_leaf = Vec::<((usize,usize), usize)>::new ();
 
         assert_eq! (super::dfs_edges (&g, 1).unwrap (), dfs_edges_root, "Failed dfs root");
         assert_eq! (super::dfs_edges (&g, 2).unwrap (), dfs_edges_mid, "Failed dfs mid");
@@ -869,15 +877,15 @@ mod tests
         g.add_edge_raw (6,7 ,0).expect ("Failed to add edge 6 -> 7 ");
         g.add_edge_raw (9,10,0).expect ("Failed to add edge 9 -> 10");
         let dfs_edges = vec![
-            ( 1,  2 ),
-            ( 2,  3 ),
-            ( 3,  4 ),
-            ( 1,  5 ),
-            ( 5,  6 ),
-            ( 6,  7 ),
-            ( 5,  8 ),
-            ( 1,  9 ),
-            ( 9, 10 ),
+            ( ( 1,  2 ), 0 ),
+            ( ( 2,  3 ), 1 ),
+            ( ( 3,  4 ), 2 ),
+            ( ( 1,  5 ), 0 ),
+            ( ( 5,  6 ), 1 ),
+            ( ( 6,  7 ), 2 ),
+            ( ( 5,  8 ), 1 ),
+            ( ( 1,  9 ), 0 ),
+            ( ( 9, 10 ), 1 ),
         ];
 
         assert_eq! (super::dfs_edges (&g, 1).unwrap (), dfs_edges, "Failed dfs");
