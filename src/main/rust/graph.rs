@@ -634,6 +634,69 @@ impl Graph
         self.vertices.iter ().filter (|x| !self.outbound.contains_key (x)).copied ().collect::<collections::HashSet::<usize>> ()
     }
 
+    pub fn remap (&mut self, map: &collections::HashMap<usize, usize>)
+        -> Result<(), crate::error::GraphError>
+    {
+        let ks = map.keys ().copied ().collect::<collections::HashSet<_>> ();
+        if ks.is_subset (&self.vertices)
+        {
+            let vs = map.values ().copied ().collect::<collections::HashSet<_>> ();
+            if ks.len () == vs.len ()
+            {
+                let rvs = vs.intersection (&self.vertices).copied ().collect::<collections::HashSet<_>> ();
+                if rvs.is_subset (&ks)
+                {
+                    let edges_new = self.edges.drain ()
+                        .map (|(k,v)| {
+                            (
+                                (
+                                    map.get (&k.0).copied ().unwrap_or (k.0),
+                                    map.get (&k.1).copied ().unwrap_or (k.1),
+                                )
+                                , v
+                            )
+                        }).collect::<Vec<_>> ();
+                    self.edges.extend (edges_new);
+                    let inbound_new = self.inbound.drain ()
+                        .map (|(k,v)| {
+                            (
+                                map.get (&k).copied ().unwrap_or (k),
+                                v.iter ().map (|x| map.get (x).copied ().unwrap_or (*x) ).collect::<collections::HashSet::<_>> ()
+                            )
+                        })
+                        .collect::<Vec<_>> ();
+                    self.inbound.extend (inbound_new);
+                    let outbound_new = self.outbound.drain ()
+                        .map (|(k,v)| {
+                            (
+                                map.get (&k).copied ().unwrap_or (k),
+                                v.iter ().map (|x| map.get (x).copied ().unwrap_or (*x) ).collect::<collections::HashSet::<_>> ()
+                            )
+                        })
+                        .collect::<Vec<_>> ();
+                    self.outbound.extend (outbound_new);
+                    let vertices_new = self.vertices.drain ()
+                        .map (|x| map.get (&x).copied ().unwrap_or (x))
+                        .collect::<Vec<_>> ();
+                    self.vertices.extend (vertices_new);
+                    Ok (())
+                }
+                else
+                {
+                    Err (crate::error::GraphError::DataError (String::from ("Both directions are required when swapping existing vertices")))
+                }
+            }
+            else
+            {
+                Err (crate::error::GraphError::DataError (String::from ("Every key must have a unique value")))
+            }
+        }
+        else
+        {
+            Err (crate::error::GraphError::DataError (String::from ("Remap keys must be a subset of graph vertices")))
+        }
+    }
+
     pub fn retain (&mut self, vertices_retain: &collections::HashSet<usize>)
         -> Result<(), crate::error::GraphError>
     {
@@ -1258,6 +1321,47 @@ impl LabelledGraph
             self.vertex_label.insert (*a_id, vertex_label_next);
             Ok (())
         }
+    }
+
+    pub fn remap_raw (&mut self, map: &collections::HashMap<usize, usize>)
+        -> Result<(), crate::error::GraphError>
+    {
+        self.graph.remap (map)?;
+        let edge_attrs_new = self.edge_attrs.drain ()
+            .map (|(k,v)| {
+                (
+                    (
+                        map.get (&k.0).copied ().unwrap_or (k.0),
+                        map.get (&k.1).copied ().unwrap_or (k.1),
+                    ),
+                    v
+                )
+            })
+            .collect::<Vec<_>> ();
+        self.edge_attrs.extend (edge_attrs_new);
+        let vertex_attrs_new = self.vertex_attrs.drain ()
+            .map (|(k,v)| {
+                (
+                    map.get (&k).copied ().unwrap_or (k),
+                    v
+                )
+            })
+            .collect::<Vec<_>> ();
+        self.vertex_attrs.extend (vertex_attrs_new);
+        let vertex_label_new = self.vertex_label.drain ()
+            .map (|(k,v)| {
+                (
+                    map.get (&k).copied ().unwrap_or (k),
+                    v
+                )
+            })
+            .collect::<Vec<_>> ();
+        self.vertex_label.extend (vertex_label_new);
+        for val in self.vertex_lookup.values_mut ()
+        {
+            *val = map.get (val).copied ().unwrap_or (*val);
+        }
+        Ok (())
     }
 
     pub fn remove_edge (&mut self, (a, b): &(String, String))
@@ -2069,6 +2173,121 @@ mod tests
         rg.remove_vertex_raw (&2).expect ("Failed to remove vertex 2");
 
         assert! (rg.endpoints ().is_empty (), "endpoints should be empty");
+    }
+
+    #[test]
+    fn test_remap ()
+    {
+        init ();
+        let mut g = Graph::new ();
+        // 1
+        // |
+        // *
+        // 2
+        g.add_edge_raw (1, 2, 0).expect ("Failed to add edge 1 -> 2");
+        let m = collections::HashMap::<usize,usize>::from ([
+            ( 1, 2 ),
+            ( 2, 1 ),
+        ]);
+        g.remap (&m).expect ("Failed to remap");
+
+        let expected_edges = collections::HashMap::<(usize, usize), i64>::from ([
+            ( ( 2, 1 ), 0 )
+        ]);
+        assert_eq! (g.edges (), &expected_edges, "Edges should be remapped");
+    }
+
+    #[test]
+    fn test_remap_partial ()
+    {
+        init ();
+        let mut g = Graph::new ();
+        //    1
+        //   / \
+        //  *   *
+        // 2     3
+        g.add_edge_raw (1, 2, 0).expect ("Failed to add edge 1 -> 2");
+        g.add_edge_raw (1, 3, 1).expect ("Failed to add edge 1 -> 3");
+        let m = collections::HashMap::<usize,usize>::from ([
+            ( 1, 2 ),
+            ( 2, 1 ),
+        ]);
+        g.remap (&m).expect ("Failed to remap");
+
+        let expected_edges = collections::HashMap::<(usize, usize), i64>::from ([
+            ( ( 2, 1 ), 0 ),
+            ( ( 2, 3 ), 1 ),
+        ]);
+        let expected_vertices = collections::HashSet::<usize>::from ([1,2,3]);
+        assert_eq! (g.edges (), &expected_edges, "Edges should be remapped");
+        assert_eq! (g.vertices (), &expected_vertices, "Vertices should be remapped");
+    }
+
+    #[test]
+    fn test_remap_invalid ()
+    {
+        init ();
+        let mut g = Graph::new ();
+        //    1
+        //   / \
+        //  *   *
+        // 2     3
+        g.add_edge_raw (1, 2, 0).expect ("Failed to add edge 1 -> 2");
+        g.add_edge_raw (1, 3, 0).expect ("Failed to add edge 1 -> 3");
+
+        let m_duplicate_value = collections::HashMap::<usize,usize>::from ([
+            ( 1, 2 ),
+            ( 3, 2 ),
+        ]);
+        let m_invalid_vertex = collections::HashMap::<usize,usize>::from ([
+            ( 4, 1 ),
+        ]);
+        let m_reciprocal = collections::HashMap::<usize,usize>::from ([
+            ( 1, 2 ),
+        ]);
+        assert_eq! (g.remap (&m_duplicate_value), Err (crate::error::GraphError::DataError (String::from ("Every key must have a unique value"))));
+        assert_eq! (g.remap (&m_invalid_vertex), Err (crate::error::GraphError::DataError (String::from ("Remap keys must be a subset of graph vertices"))));
+        assert_eq! (g.remap (&m_reciprocal), Err (crate::error::GraphError::DataError (String::from ("Both directions are required when swapping existing vertices"))));
+    }
+
+    #[test]
+    fn test_remap_raw_labelled ()
+    {
+        init ();
+        let mut lg = LabelledGraph::new ();
+        //    a
+        //    |
+        //    *
+        //    b
+        //   / \
+        //  *   *
+        // c     d
+        lg.add_edge_raw (1, String::from ("a"), 2, String::from ("b"), None, 0).expect ("Failed to add edge 1:a -> 2:b");
+        lg.add_edge_raw (2, String::from ("b"), 3, String::from ("c"), None, 1).expect ("Failed to add edge 2:b -> 3:c");
+        lg.add_edge_raw (2, String::from ("b"), 4, String::from ("d"), None, 2).expect ("Failed to add edge 2:b -> 4:d");
+
+        let m = collections::HashMap::<usize,usize>::from ([
+            ( 1, 4 ),
+            ( 2, 3 ),
+            ( 3, 2 ),
+            ( 4, 1 ),
+        ]);
+
+        lg.remap_raw (&m).expect ("Failed to remap");
+
+        let expected_edges = collections::HashMap::<(usize,usize), i64>::from ([
+            ( (4,3), 0 ),
+            ( (3,2), 1 ),
+            ( (3,1), 2 ),
+        ]);
+        let expected_vertex_labels = vec![
+            String::from ("a"),
+            String::from ("b"),
+            String::from ("c"),
+            String::from ("d"),
+        ];
+        assert_eq! (lg.edges (), &expected_edges, "Edges should be remapped");
+        assert_eq! ([4,3,2,1].iter ().map (|x| lg.vertex_label (x).expect ("Failed to find vertex_label")).collect::<Vec<_>> (), expected_vertex_labels, "Vertex labels not remaped");
     }
 
     #[test]

@@ -4,7 +4,7 @@ use std::num;
 use thiserror::Error;
 
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, PartialEq)]
 pub enum GraphError
 {
     #[error("Algorithm error: {0}")]
