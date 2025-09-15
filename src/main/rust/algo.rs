@@ -469,7 +469,39 @@ pub fn topological_sort (g: &graph::Graph)
     }
     else
     {
-        Err (crate::error::GraphError::EdgeError (String::from ("Graph contains at least one cycle")))
+        Err (error::GraphError::EdgeError (String::from ("Graph contains at least one cycle")))
+    }
+}
+
+pub fn tree_sort (g: &graph::Graph)
+    -> Result<Vec<usize>, error::GraphError>
+{
+    let roots = g.sources ();
+    match roots.len ()
+    {
+        0 => Err (error::GraphError::AlgorithmError (String::from ("No root found"))),
+        1 => {
+            let root = roots.into_iter ()
+                .next ()
+                .unwrap ();
+            //debug! ("root: {}", root);
+            let dfs_e = dfs_edges (g, root)?;
+            //debug! ("dfs_e: {:?}", dfs_e);
+            let dfs_order = dfs_e.into_iter ()
+                .fold ( ( Vec::new (), collections::HashSet::<usize>::new () ), |mut acc, item| {
+                        if acc.1.insert (item.0.0)
+                        {
+                            acc.0.push (item.0.0);
+                        }
+                        if acc.1.insert (item.0.1)
+                        {
+                            acc.0.push (item.0.1);
+                        }
+                        acc
+                }).0;
+            Ok (dfs_order)
+        },
+        n @ _ => Err (error::GraphError::AlgorithmError (format! ("Multiple roots ({}) found", n)))
     }
 }
 
@@ -521,6 +553,29 @@ mod tests
         let solutions = collections::HashSet::from ([vec![2,1,3]]);
         let r = super::topological_sort (&g).unwrap ();
         assert! (solutions.contains (&r), "{:?} not found in {:?}", r, solutions);
+    }
+
+    #[test]
+    fn test_tree_sort ()
+    {
+        init ();
+        let mut g = graph::Graph::new ();
+        //       1
+        //      / \
+        //     *   *
+        //    2     3
+        //   / \
+        //  *   *
+        // 4     5
+        g.add_edge_raw (1,2,0).expect ("Failed to add edge 1 -> 2");
+        g.add_edge_raw (1,3,0).expect ("Failed to add edge 1 -> 3");
+        g.add_edge_raw (2,4,0).expect ("Failed to add edge 2 -> 4");
+        g.add_edge_raw (2,5,0).expect ("Failed to add edge 2 -> 5");
+
+        let expected = vec![1,2,4,5,3];
+        let r = super::tree_sort (&g).expect ("Failed tree_sort");
+
+        assert_eq! (expected, r, "Expected tree sort order");
     }
 
     #[test]
