@@ -486,9 +486,8 @@ pub fn tree_sort (g: &graph::Graph)
                 .unwrap ();
             //debug! ("root: {}", root);
             let dfs_e = dfs_edges (g, root)?;
-            //debug! ("dfs_e: {:?}", dfs_e);
             let dfs_order = dfs_e.into_iter ()
-                .fold ( ( Vec::new (), collections::HashSet::<usize>::new () ), |mut acc, item| {
+                .fold ( ( Vec::from ([root]), collections::HashSet::<usize>::from ([root]) ), |mut acc, item| {
                         if acc.1.insert (item.0.0)
                         {
                             acc.0.push (item.0.0);
@@ -573,6 +572,20 @@ mod tests
         g.add_edge_raw (2,5,0).expect ("Failed to add edge 2 -> 5");
 
         let expected = vec![1,2,4,5,3];
+        let r = super::tree_sort (&g).expect ("Failed tree_sort");
+
+        assert_eq! (expected, r, "Expected tree sort order");
+    }
+
+    #[test]
+    fn test_tree_sort_single ()
+    {
+        init ();
+        let mut g = graph::Graph::new ();
+        // 1
+        g.add_vertex_raw (1).expect ("Failed to add vertex 1");
+
+        let expected = vec![1];
         let r = super::tree_sort (&g).expect ("Failed tree_sort");
 
         assert_eq! (expected, r, "Expected tree sort order");
