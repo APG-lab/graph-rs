@@ -69,6 +69,19 @@ pub fn base_graph (gv: &Vec<graph::LabelledGraph>)
     }
 }
 
+pub fn first_graph (gv: &Vec<graph::LabelledGraph>)
+    -> Result<&graph::LabelledGraph, error::GraphError>
+{
+    if let Some (maybe_first_graph) = gv.first ()
+    {
+        Ok (maybe_first_graph)
+    }
+    else
+    {
+        Err (error::GraphError::DataError (String::from ("No graphs found")))
+    }
+}
+
 pub fn last_graph (gv: &Vec<graph::LabelledGraph>)
     -> Result<&graph::LabelledGraph, error::GraphError>
 {
