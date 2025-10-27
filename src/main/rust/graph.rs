@@ -537,10 +537,10 @@ impl Graph
     {
         if self.vertices.contains (a)
         {
-            let outbound = self.outbound (&a)?;
-            match outbound.len ()
+            let inbound = self.inbound (&a)?;
+            match inbound.len ()
             {
-                0 | 1 => Ok (outbound.into_iter ().next ()),
+                0 | 1 => Ok (inbound.into_iter ().next ()),
                 _ => Err (crate::error::GraphError::VertexError (format! ("Vertex: {} has more than one parent", a)))
             }
         }
@@ -1995,10 +1995,10 @@ mod tests
     {
         init ();
         let mut g = Graph::new ();
-        g.add_edge_raw (2,1,0).expect ("Failed to add edge 2 -> 1");
-        g.add_edge_raw (3,1,0).expect ("Failed to add edge 3 -> 1");
-        g.add_edge_raw (4,2,0).expect ("Failed to add edge 4 -> 2");
-        g.add_edge_raw (4,3,0).expect ("Failed to add edge 4 -> 3");
+        g.add_edge_raw (1,2,0).expect ("Failed to add edge 1 -> 2");
+        g.add_edge_raw (1,3,0).expect ("Failed to add edge 1 -> 3");
+        g.add_edge_raw (2,4,0).expect ("Failed to add edge 2 -> 4");
+        g.add_edge_raw (3,4,0).expect ("Failed to add edge 3 -> 4");
 
         assert_eq! (g.parent (&0).unwrap_err ().to_string (), "Vertex error: Vertex: 0 not found in graph");
 
