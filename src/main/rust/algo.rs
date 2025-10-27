@@ -241,7 +241,7 @@ pub fn connected_components (g: &graph::UGraph)
         if !seen.contains (v)
         {
             let component = bfs_edges (g, *v)?.iter ()
-                .fold (collections::HashSet::<usize>::new (), |mut acc, item| {
+                .fold (collections::HashSet::<usize>::from ([*v]), |mut acc, item| {
                 acc.insert (item.0);
                 acc.insert (item.1);
                 acc
@@ -868,21 +868,22 @@ mod tests
     {
         init ();
         let mut g = graph::UGraph::new ();
-        //   1       4
+        //   1       4        7
         //  / \     / \
         // 2   3   5   6
         g.add_edge_raw (2,1,0).expect ("Failed to add edge 2 -> 1");
         g.add_edge_raw (3,1,0).expect ("Failed to add edge 3 -> 1");
         g.add_edge_raw (5,4,0).expect ("Failed to add edge 5 -> 4");
         g.add_edge_raw (6,4,0).expect ("Failed to add edge 6 -> 4");
-
+        g.add_vertex_raw (7).expect ("Failed to add vertex 7");
         let solution = vec![
             collections::HashSet::from_iter (vec![1,2,3]),
-            collections::HashSet::from_iter (vec![4,5,6])
+            collections::HashSet::from_iter (vec![4,5,6]),
+            collections::HashSet::from_iter (vec![7]),
         ];
 
         let mut r = super::connected_components (&g).unwrap ();
-        r.sort_by_key (|k| *k.iter ().min ().expect ("Failed to find min of component"));
+        r.sort_by_key (|k| k.iter ().min ().copied ().unwrap_or (0));
         assert_eq! (r,solution);
     }
 
