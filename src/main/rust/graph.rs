@@ -532,6 +532,24 @@ impl Graph
         self.vertices.iter ().filter (|x| !self.inbound.contains_key (x)).copied ().collect::<collections::HashSet::<usize>> ()
     }
 
+    pub fn parent (&self, a: &usize)
+        -> Result<Option<usize>, crate::error::GraphError>
+    {
+        if self.vertices.contains (a)
+        {
+            let outbound = self.outbound (&a)?;
+            match outbound.len ()
+            {
+                0 | 1 => Ok (outbound.into_iter ().next ()),
+                _ => Err (crate::error::GraphError::VertexError (format! ("Vertex: {} has more than one parent", a)))
+            }
+        }
+        else
+        {
+            Err (crate::error::GraphError::VertexError (format! ("Vertex: {} not found in graph", a)))
+        }
+    }
+
     pub fn remove_edge_raw (&mut self, a: &usize, b: &usize)
         -> Result<(), crate::error::GraphError>
     {
@@ -1970,6 +1988,25 @@ mod tests
         assert_eq! (g.vertices (), &(0..8).collect::<collections::HashSet<usize>> (), "Failed to obtain correct vertex ids");
         assert_eq! ((0..8).map (|x| g.is_source (&x).expect ("Failed to call is_source")).collect::<Vec<_>> (), expected_is_source, "Failed is_source");
         assert_eq! ((0..8).map (|x| g.is_sink (&x).expect ("Failed to call is_sink")).collect::<Vec<_>> (), expected_is_sink, "Failed is_sink");
+    }
+
+    #[test]
+    fn test_parent ()
+    {
+        init ();
+        let mut g = Graph::new ();
+        g.add_edge_raw (2,1,0).expect ("Failed to add edge 2 -> 1");
+        g.add_edge_raw (3,1,0).expect ("Failed to add edge 3 -> 1");
+        g.add_edge_raw (4,2,0).expect ("Failed to add edge 4 -> 2");
+        g.add_edge_raw (4,3,0).expect ("Failed to add edge 4 -> 3");
+
+        assert_eq! (g.parent (&0).unwrap_err ().to_string (), "Vertex error: Vertex: 0 not found in graph");
+
+        assert_eq! (g.parent (&1).expect ("Failed to obtain maybe parent for vertex 1"), None, "root should not have a parent");
+        assert_eq! (g.parent (&2).expect ("Failed to obtain maybe parent for vertex 2"), Some (1), "2 should have parent 1");
+        assert_eq! (g.parent (&3).expect ("Failed to obtain maybe parent for vertex 3"), Some (1), "3 should have parent 1");
+
+        assert_eq! (g.parent (&4).unwrap_err ().to_string (), "Vertex error: Vertex: 4 has more than one parent");
     }
 
     #[test]
