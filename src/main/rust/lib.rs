@@ -2,6 +2,7 @@
 use std::collections;
 use std::fs;
 use std::io::Write;
+use std::iter;
 
 pub mod algo;
 pub mod eq;
@@ -69,6 +70,34 @@ pub fn base_graph (gv: &Vec<graph::LabelledGraph>)
     }
 }
 
+pub fn cut_graph_tree (
+    (g_tree, g_vec): &(graph::LabelledGraph, Vec<graph::LabelledGraph>),
+    v: usize,
+    )
+    -> Result<(graph::LabelledGraph, Vec<graph::LabelledGraph>), error::GraphError>
+{
+    let p_vertices = algo::dfs_edges (g_tree.graph (), v)?
+        .into_iter ()
+        .flat_map (|x| [x.0.0, x.0.1])
+        .chain (iter::once (v))
+        .collect::<collections::HashSet<_>> ();
+
+    let (p_vec, remap) = g_vec.iter ()
+        .enumerate ()
+        .filter (|&(i,_)| p_vertices.contains (&i))
+        .fold ( ( Vec::new (), collections::HashMap::<usize, usize>::new () ), |mut acc , item| {
+            acc.1.insert (item.0, acc.0.len ());
+            acc.0.push (item.1.clone ());
+            acc
+        });
+
+    let mut p_tree = g_tree.clone ();
+    p_tree.retain (&p_vertices)?;
+    p_tree.remap_raw (&remap)?;
+
+    Ok ( ( p_tree, p_vec ) )
+}
+
 pub fn first_graph (gv: &Vec<graph::LabelledGraph>)
     -> Result<&graph::LabelledGraph, error::GraphError>
 {
@@ -123,14 +152,44 @@ pub fn graph_to_dot (graph: graph::Graph, file_path: &str)
     Ok (())
 }
 
-
 #[cfg(test)]
-mod tests
+mod tests_lib
 {
     use crate::graph;
 
     #[test]
-    fn simple_to_dot ()
+    fn test_cut_graph_tree ()
+    {
+        let mut g_tree = graph::LabelledGraph::new ();
+        g_tree.add_edge_raw (0, String::from ("zero"), 1, String::from ("one"), None, 0).expect ("added edge 0:zero -> 1:one");
+
+        let g_zero = graph::LabelledGraph::new_with_name ("zero");
+        let g_one = graph::LabelledGraph::new_with_name ("one");
+
+        let g_vec = vec![g_zero.clone (), g_one.clone ()];
+
+        let gt = (g_tree, g_vec);
+
+        let gt_zero = super::cut_graph_tree (&gt, 0).expect ("Failed to cut graph tree at 0");
+        let gt_one  = super::cut_graph_tree (&gt, 1).expect ("Failed to cut graph tree at 1");
+
+        let mut expected_gt_zero_tree = graph::LabelledGraph::new ();
+        expected_gt_zero_tree.add_edge_raw (0, String::from ("zero"), 1, String::from ("one"), None, 0).expect ("added edge 0:zero -> 1:one");
+        let expected_gt_zero_vec = vec![g_zero.clone (), g_one.clone ()];
+
+        let mut expected_gt_one_tree = graph::LabelledGraph:: new ();
+        expected_gt_one_tree.add_vertex_raw (0, String::from ("one"), None).expect ("Failed to add vertex 0:'one'");
+        let expected_gt_one_vec = vec![g_one];
+
+
+        assert_eq! (gt_zero.0, expected_gt_zero_tree);
+        assert_eq! (gt_zero.1, expected_gt_zero_vec);
+        assert_eq! (gt_one.0, expected_gt_one_tree);
+        assert_eq! (gt_one.1, expected_gt_one_vec);
+    }
+
+    #[test]
+    fn test_simple_to_dot ()
     {
         let mut g = graph::Graph::new ();
         g.add_edge_raw (1, 2, 0).expect ("added edge 1,2");
@@ -139,7 +198,7 @@ mod tests
     }
 
     #[test]
-    fn to_undirected ()
+    fn test_to_undirected ()
     {
         let mut g = graph::Graph::new_with_name ("g");
         g.add_edge_raw (1,2,1).expect ("added edge 1,2 1");
