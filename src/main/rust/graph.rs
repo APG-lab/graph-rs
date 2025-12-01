@@ -1067,7 +1067,7 @@ impl LabelledGraph
             }
             else
             {
-                Err (crate::error::GraphError::VertexError (String::from ("vertex already exists but has a different id")))
+                Err (crate::error::GraphError::VertexError (format! ("vertex already exists but has a different id {} != {}", a_id, a_id_e)))
             }
         }
         else
@@ -1080,7 +1080,7 @@ impl LabelledGraph
                     }
                     else
                     {
-                        Err (crate::error::GraphError::VertexError (String::from ("vertex id already exists but has a different label")))
+                        Err (crate::error::GraphError::VertexError (format! ("vertex id {} already exists but has a different label", a_id)))
                     }
                 }
                 else
@@ -1890,8 +1890,8 @@ mod tests
         let mut g = LabelledGraph::new ();
         let a_id = g.add_vertex (String::from ("a"), None).expect ("Failed to add vertex 'a'");
 
-        assert_eq! (g.add_vertex_raw (a_id, String::from ("b"), None).unwrap_err ().to_string (), "Vertex error: vertex id already exists but has a different label");
-        assert_eq! (g.add_vertex_raw (a_id + 10, String::from ("a"), None).unwrap_err ().to_string (), "Vertex error: vertex already exists but has a different id");
+        assert_eq! (g.add_vertex_raw (a_id, String::from ("b"), None).unwrap_err ().to_string (), "Vertex error: vertex id 1 already exists but has a different label");
+        assert_eq! (g.add_vertex_raw (a_id + 10, String::from ("a"), None).unwrap_err ().to_string (), "Vertex error: vertex already exists but has a different id 11 != 1");
 
         let b_id = g.add_vertex_raw (a_id + 10, String::from ("b"), None).expect ("Failed to add_vertex_raw");
 
@@ -2146,10 +2146,10 @@ mod tests
         assert! (g.has_edge (&el));
         assert! (g.add_edge_raw (1, String::from ("b"), 0, String::from ("a"), None, 0).is_ok ());
 
-        assert_eq! (g.add_edge_raw (2, String::from ("b"), 0, String::from ("a"), None, 0).unwrap_err ().to_string (), "Vertex error: vertex already exists but has a different id");
-        assert_eq! (g.add_edge_raw (1, String::from ("c"), 0, String::from ("a"), None, 0).unwrap_err ().to_string (), "Vertex error: vertex id already exists but has a different label");
-        assert_eq! (g.add_edge_raw (1, String::from ("b"), 2, String::from ("a"), None, 0).unwrap_err ().to_string (), "Vertex error: vertex already exists but has a different id");
-        assert_eq! (g.add_edge_raw (1, String::from ("b"), 0, String::from ("c"), None, 0).unwrap_err ().to_string (), "Vertex error: vertex id already exists but has a different label");
+        assert_eq! (g.add_edge_raw (2, String::from ("b"), 0, String::from ("a"), None, 0).unwrap_err ().to_string (), "Vertex error: vertex already exists but has a different id 2 != 1");
+        assert_eq! (g.add_edge_raw (1, String::from ("c"), 0, String::from ("a"), None, 0).unwrap_err ().to_string (), "Vertex error: vertex id 1 already exists but has a different label");
+        assert_eq! (g.add_edge_raw (1, String::from ("b"), 2, String::from ("a"), None, 0).unwrap_err ().to_string (), "Vertex error: vertex already exists but has a different id 2 != 0");
+        assert_eq! (g.add_edge_raw (1, String::from ("b"), 0, String::from ("c"), None, 0).unwrap_err ().to_string (), "Vertex error: vertex id 0 already exists but has a different label");
     }
 
     #[test]

@@ -8,7 +8,7 @@ use std::collections;
 use std::iter;
 
 #[derive(Copy, Clone, Eq, PartialEq)]
-struct MultiSourceState
+pub struct MultiSourceState
 {
     cost: i64,
     source: usize,
