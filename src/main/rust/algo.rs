@@ -10,9 +10,9 @@ use std::iter;
 #[derive(Copy, Clone, Eq, PartialEq)]
 pub struct MultiSourceState
 {
-    cost: i64,
-    source: usize,
-    v: usize
+    pub cost: i64,
+    pub source: usize,
+    pub v: usize
 }
 
 // The priority queue depends on `Ord`.
