@@ -125,6 +125,14 @@ pub fn all_shortest_paths<G: graph::GraphAny> (g: &G, sources: &collections::Has
     Ok (r)
 }
 
+pub fn ancestors (g: &graph::Graph, source: usize)
+    -> Result<collections::HashSet<usize>, error::GraphError>
+{
+    Ok (bfs_edges_reverse (g, source)?.into_iter ()
+        .map (|x| x.0)
+        .collect::<collections::HashSet<_>> ())
+}
+
 pub fn bfs_edges<G: graph::GraphAny> (g: &G, source: usize)
     -> Result<Vec<(usize, usize)>, error::GraphError>
 {
@@ -158,6 +166,49 @@ pub fn bfs_edges<G: graph::GraphAny> (g: &G, source: usize)
     }
 
     Ok (r)
+}
+
+pub fn bfs_edges_reverse (g: &graph::Graph, source: usize)
+    -> Result<Vec<(usize, usize)>, error::GraphError>
+{
+    let neighbours = g.vertices ().iter ().fold (collections::HashMap::<usize, collections::HashSet<usize>>::new (), |mut acc, item| {
+        acc.insert (*item, g.inbound (item).unwrap ());
+        acc
+        });
+    let mut neighbours_iters = neighbours.iter ().fold (collections::HashMap::<usize, collections::hash_set::Iter<'_, usize>>::new (), |mut acc, (k, v)| {
+        acc.insert (*k, v.iter () );
+        acc
+    });
+    let mut visited = collections::HashSet::<usize>::from ([source]);
+    let mut r = Vec::<(usize, usize)>::new ();
+    let mut queue = collections::VecDeque::<(usize, usize)>::from (vec![(source, 0)]);
+
+    while let Some ( (child, current_depth ) ) = queue.front ()
+    {
+        if let Some (parent) = neighbours_iters.get_mut (child).ok_or (error::GraphError::AlgorithmError (format! ("No neighbours iter for {}", child)))?.next ()
+        {
+            if !visited.contains (parent)
+            {
+                r.push ( (*parent, *child) );
+                visited.insert (*parent);
+                queue.push_back ( (*parent, *current_depth + 1) );
+            }
+        }
+        else
+        {
+                queue.pop_front ();
+        }
+    }
+
+    Ok (r)
+}
+
+pub fn descendants (g: &graph::Graph, source: usize)
+    -> Result<collections::HashSet<usize>, error::GraphError>
+{
+    Ok (bfs_edges (g, source)?.into_iter ()
+        .map (|x| x.1)
+        .collect::<collections::HashSet<_>> ())
 }
 
 pub fn edge_bfs<G: graph::GraphAny> (g: &G, source: usize)
@@ -773,6 +824,45 @@ mod tests
     }
 
     #[test]
+    fn test_ancestors_and_descendants ()
+    {
+        init ();
+        let mut g = graph::Graph::new ();
+        //         1
+        //        / \
+        //       /   \
+        //      *     *
+        //     2       3
+        //    / \     /
+        //   /   \   /
+        //  *     * *
+        // 4       5
+        //        / \
+        //       /   \
+        //      *     *
+        //     6       7
+        //      \     /
+        //       \   /
+        //        * *
+        //         8
+        g.add_edge_raw (1,2,0).expect ("Failed to add edge 1 -> 2");
+        g.add_edge_raw (1,3,0).expect ("Failed to add edge 1 -> 3");
+        g.add_edge_raw (2,4,0).expect ("Failed to add edge 2 -> 4");
+        g.add_edge_raw (2,5,0).expect ("Failed to add edge 2 -> 5");
+        g.add_edge_raw (3,5,0).expect ("Failed to add edge 3 -> 5");
+        g.add_edge_raw (5,6,0).expect ("Failed to add edge 5 -> 6");
+        g.add_edge_raw (5,7,0).expect ("Failed to add edge 5 -> 7");
+        g.add_edge_raw (6,8,0).expect ("Failed to add edge 6 -> 8");
+        g.add_edge_raw (7,8,0).expect ("Failed to add edge 7 -> 8");
+
+        let expected_ancestors = collections::HashSet::<usize>::from ([1,2,3]);
+        let expected_descendants = collections::HashSet::<usize>::from ([6,7,8]);
+
+        assert_eq! (expected_ancestors, super::ancestors (&g, 5).expect ("Failed ancestors"), "Expected ancestors");
+        assert_eq! (expected_descendants, super::descendants (&g, 5).expect ("Failed descendants"), "Expected descendants");
+    }
+
+    #[test]
     fn test_bfs ()
     {
         init ();
@@ -803,6 +893,56 @@ mod tests
             ]);
         let r = super::bfs_edges (&g, 1).unwrap ();
         assert! (solutions.contains (&r), "{:?} not found in {:?}", r, solutions);
+    }
+
+    #[test]
+    fn test_bfs_reverse ()
+    {
+        init ();
+        let mut g = graph::Graph::new ();
+        //         1
+        //        / \
+        //       /   \
+        //      *     *
+        //     2       3
+        //    / \     /
+        //   /   \   /
+        //  *     * *
+        // 4       5
+        //        / \
+        //       /   \
+        //      *     *
+        //     6       7
+        //      \     /
+        //       \   /
+        //        * *
+        //         8
+        g.add_edge_raw (1,2,0).expect ("Failed to add edge 1 -> 2");
+        g.add_edge_raw (1,3,0).expect ("Failed to add edge 1 -> 3");
+        g.add_edge_raw (2,4,0).expect ("Failed to add edge 2 -> 4");
+        g.add_edge_raw (2,5,0).expect ("Failed to add edge 2 -> 5");
+        g.add_edge_raw (3,5,0).expect ("Failed to add edge 3 -> 5");
+        g.add_edge_raw (5,6,0).expect ("Failed to add edge 5 -> 6");
+        g.add_edge_raw (5,7,0).expect ("Failed to add edge 5 -> 7");
+        g.add_edge_raw (6,8,0).expect ("Failed to add edge 6 -> 8");
+        g.add_edge_raw (7,8,0).expect ("Failed to add edge 7 -> 8");
+
+        let solutions = collections::HashSet::from ([
+                                                    vec![(5,6), (5,7), (6,8)],
+                                                    vec![(5,6), (5,7), (7,8)],
+                                                    vec![(5,7), (5,6), (6,8)],
+                                                    vec![(5,7), (5,6), (7,8)],
+            ]);
+        let solutions_reverse = collections::HashSet::from ([
+                                                    vec![(2,5), (3,5), (1,2)],
+                                                    vec![(2,5), (3,5), (1,3)],
+                                                    vec![(3,5), (2,5), (1,2)],
+                                                    vec![(3,5), (2,5), (1,3)],
+            ]);
+        let r = super::bfs_edges (&g, 5).unwrap ();
+        let q = super::bfs_edges_reverse (&g, 5).unwrap ();
+        assert! (solutions.contains (&r), "{:?} not found in {:?}", r, solutions);
+        assert! (solutions_reverse.contains (&q), "{:?} not found in {:?} (reverse)", q, solutions_reverse);
     }
 
     #[test]
