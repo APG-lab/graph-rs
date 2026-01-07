@@ -282,6 +282,51 @@ pub fn edge_bfs<G: graph::GraphAny> (g: &G, source: usize)
     Ok (r)
 }
 
+pub fn edge_bfs_reverse (g: &graph::Graph, source: usize)
+    -> Result<Vec<(usize, usize)>, error::GraphError>
+{
+    let neighbours = g.vertices ().iter ().fold (collections::HashMap::<usize, collections::HashSet<usize>>::new (), |mut acc, item| {
+        acc.insert (*item, g.inbound (item).unwrap ());
+        acc
+        });
+    let mut neighbours_iters = neighbours.iter ().fold (collections::HashMap::<usize, collections::hash_set::Iter<'_, usize>>::new (), |mut acc, (k, v)| {
+        acc.insert (*k, v.iter () );
+        acc
+    });
+
+    let mut visited_vertices = collections::HashSet::<usize>::from ([source]);
+    let mut visited_edges = collections::HashSet::<(usize, usize)>::new ();
+    let mut r = Vec::<(usize, usize)>::new ();
+
+    let source_edges = neighbours_iters.get_mut (&source)
+        .ok_or (error::GraphError::AlgorithmError (format! ("No neighbours iter for {}", source)))?
+        .map (|x| { (*x, source) })
+        .collect::<Vec<(usize,usize)>> ();
+
+    let mut queue = collections::VecDeque::<(usize, usize)>::from (source_edges);
+
+    while let Some (ev) = queue.pop_front ()
+    {
+        //debug! ("parent: {} edges: {:?}", parent, edges);
+        if !visited_vertices.contains (&ev.0)
+        {
+            visited_vertices.insert (ev.0);
+            let parent_edges = neighbours_iters.get_mut (&ev.0)
+                .ok_or (error::GraphError::AlgorithmError (format! ("No neighbours iter for {}", ev.0)))?
+                .map (|x| { (*x, ev.0) })
+                .collect::<Vec<(usize,usize)>> ();
+            queue.extend (parent_edges);
+        }
+
+        if !visited_edges.contains (&ev)
+        {
+            visited_edges.insert (ev);
+            r.push (ev);
+        }
+    }
+    Ok (r)
+}
+
 pub fn connected_components (g: &graph::UGraph)
     -> Result<Vec<collections::HashSet<usize>>, error::GraphError>
 {
@@ -1000,6 +1045,77 @@ mod tests
             ]);
 
         let r = super::edge_bfs (&g, 1).unwrap ();
+        assert! (solutions.contains (&r), "{:?} not found in {:?}", r, solutions);
+    }
+
+    #[test]
+    fn test_edge_bfs_reverse ()
+    {
+        init ();
+        let mut g = graph::Graph::new ();
+        //         1
+        //        / \
+        //       /   \
+        //      *     *
+        //     2       3
+        //    / \     /
+        //   /   \   /
+        //  *     * *
+        // 4       5
+        //        / \
+        //       /   \
+        //      *     *
+        //     6       7
+        //      \     /
+        //       \   /
+        //        * *
+        //         8
+        g.add_edge_raw (1,2,0).expect ("Failed to add edge 1 -> 2");
+        g.add_edge_raw (1,3,0).expect ("Failed to add edge 1 -> 3");
+        g.add_edge_raw (2,4,0).expect ("Failed to add edge 2 -> 4");
+        g.add_edge_raw (2,5,0).expect ("Failed to add edge 2 -> 5");
+        g.add_edge_raw (3,5,0).expect ("Failed to add edge 3 -> 5");
+        g.add_edge_raw (5,6,0).expect ("Failed to add edge 5 -> 6");
+        g.add_edge_raw (5,7,0).expect ("Failed to add edge 5 -> 7");
+        g.add_edge_raw (6,8,0).expect ("Failed to add edge 6 -> 8");
+        g.add_edge_raw (7,8,0).expect ("Failed to add edge 7 -> 8");
+
+        let solutions = collections::HashSet::from ([
+                                                    vec![(5,6), (5,7), (6,8), (7,8)],
+                                                    vec![(5,7), (5,6), (7,8), (6,8)],
+            ]);
+        let solutions_reverse = collections::HashSet::from ([
+                                                    vec![(2,5), (3,5), (1,2), (1,3)],
+                                                    vec![(3,5), (2,5), (1,3), (1,2)],
+            ]);
+        let r = super::edge_bfs (&g, 5).unwrap ();
+        let q = super::edge_bfs_reverse (&g, 5).unwrap ();
+
+        assert! (solutions.contains (&r), "{:?} not found in {:?}", r, solutions);
+        assert! (solutions_reverse.contains (&q), "{:?} not found in {:?} (reverse)", q, solutions_reverse);
+    }
+
+    #[test]
+    fn test_edge_bfs_reverse_all_edges ()
+    {
+        init ();
+        let mut g = graph::Graph::new ();
+        // 1
+        // *
+        // *
+        // 2
+        // |
+        // *
+        // 3
+        g.add_edge_raw (1,2,0).expect ("Failed to add edge 1 -> 2");
+        g.add_edge_raw (2,1,0).expect ("Failed to add edge 2 -> 1");
+        g.add_edge_raw (2,3,0).expect ("Failed to add edge 2 -> 3");
+
+        let solutions = collections::HashSet::from ([
+                                                    vec![(2,3), (1,2), (2,1)]
+            ]);
+
+        let r = super::edge_bfs_reverse (&g, 3).unwrap ();
         assert! (solutions.contains (&r), "{:?} not found in {:?}", r, solutions);
     }
 
