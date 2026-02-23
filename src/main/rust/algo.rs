@@ -6,6 +6,7 @@ use crate::prng;
 use std::cmp;
 use std::collections;
 use std::iter;
+use std::ops;
 
 #[derive(Copy, Clone, Eq, PartialEq)]
 pub struct MultiSourceState
@@ -410,7 +411,7 @@ pub fn fast_label_propagation<G: graph::GraphAny> (g: &G, seed: &mut u64)
         let max_freq = *nlc.values ().max ().unwrap_or (&0);
 
         let most_popular_labels = nlc.iter ()
-            .filter (|(_,&v)| v == max_freq)
+            .filter (|&(_,&v)| v == max_freq)
             .map (|(k,_)| k)
             .collect::<Vec<_>> ();
 
@@ -439,6 +440,92 @@ pub fn fast_label_propagation<G: graph::GraphAny> (g: &G, seed: &mut u64)
         r_label_to_node.entry (v).or_insert (collections::HashSet::<usize>::new ()).insert (k);
     }
     Ok ( (r_node_to_label, r_label_to_node) )
+}
+
+pub fn overlapping_components<F> (g: &graph::Graph, cut: &collections::HashSet<usize>, f: F)
+    -> Result<collections::HashMap<usize, collections::HashSet<usize>>, error::GraphError>
+    where
+        F: Fn(usize) -> Result<Option<usize>, error::GraphError>
+{
+    let mut r = collections::HashMap::<usize, collections::HashSet::<usize>>::new ();
+
+    let mut fringe = collections::BinaryHeap::<MultiSourceState>::new ();
+    let ids = g.vertices ()
+        .into_iter ()
+        .try_fold (collections::HashMap::<usize, usize>::new (), |mut acc, item| {
+                if let Some (i) = f (*item)?
+                {
+                    if cut.contains (item)
+                    {
+                        Err (error::GraphError::DataError (format! ("Component identifier: {} found in cut. Compoenent identifiers may only belong to one component.", item)))
+                    }
+                    else
+                    {
+                        acc.insert (*item, i);
+                        Ok::<_, error::GraphError> (acc)
+                    }
+                }
+                else
+                {
+                    Ok::<_, error::GraphError> (acc)
+                }
+            })?;
+
+    let neighbours = g.vertices ()
+        .iter ()
+        .fold (collections::HashMap::<usize, Vec<usize>>::new (), |mut acc, item| {
+            let mut nvec = g.neighbours (item).unwrap ().into_iter ().collect::<Vec<_>> ();
+            nvec.sort ();
+            acc.insert (*item, nvec);
+            acc
+        });
+
+    let mut neighbours_iters = collections::HashMap::<usize, collections::HashMap::<usize, ops::Range<usize>>>::new ();
+
+    for ( k, v ) in &ids
+    {
+        fringe.push (MultiSourceState { cost: 0, source: *v, v: *k });
+        r.insert (*v, collections::HashSet::<usize>::from ([*k]));
+        neighbours_iters.insert (*v, neighbours.iter ().map (|x| { ( *x.0, 0..x.1.len () ) }).collect::<collections::HashMap<_,_>> ());
+    }
+
+    while let Some (MultiSourceState { cost, source, v }) = fringe.peek ()
+    {
+        //debug! ("resolve fringe: {} {} {}", cost, source, v);
+        let neigbours_iter = neighbours_iters.get_mut (&source)
+            .unwrap ()
+            .get_mut (&v)
+            .unwrap ();
+        if let Some (n_index) = neigbours_iter.next ()
+        {
+            let v_next = neighbours.get (&v)
+                .unwrap ()
+                .get (n_index)
+                .copied ()
+                .unwrap ();
+
+            //debug! ("visit {} -- {}", v, v_next);
+            let source_copy = *source;
+            if !cut.contains (&v_next)
+            {
+                if let Some (v_next_label) = ids.get (&v_next) && source != v_next_label
+                {
+                    return Err (error::GraphError::DataError (format! ("Found vertex: {} with label {} in component with label {}.", v_next, v_next_label, source)));
+                }
+                else if !r.get (&source).unwrap ().contains (&v_next)
+                {
+                    fringe.push (MultiSourceState { cost: cost + 1, source: *source, v: v_next });
+                }
+            }
+            r.get_mut (&source_copy).unwrap ().insert (v_next);
+        }
+        else
+        {
+            fringe.pop ();
+        }
+    }
+
+    Ok (r)
 }
 
 pub fn single_shortest_path<G: graph::GraphAny> (g: &G, source: usize)
@@ -1391,6 +1478,70 @@ mod tests
         let r = super::multi_source_dijkstra (&g, &sources).unwrap ();
 
         assert_eq! (r, solution);
+    }
+
+    #[test]
+    fn test_overlapping_components ()
+    {
+        init ();
+        let mut g = graph::Graph::new ();
+        //       1
+        //      / \
+        //     /   \
+        //    /     \
+        //   2       3
+        //  / \     / \
+        // 4   5   6   7
+        g.add_edge_raw (1,2,0).expect ("Failed to add edge 1 -> 2");
+        g.add_edge_raw (1,3,0).expect ("Failed to add edge 1 -> 3");
+        g.add_edge_raw (2,4,0).expect ("Failed to add edge 2 -> 4");
+        g.add_edge_raw (2,5,0).expect ("Failed to add edge 2 -> 5");
+        g.add_edge_raw (3,6,0).expect ("Failed to add edge 3 -> 6");
+        g.add_edge_raw (3,7,0).expect ("Failed to add edge 3 -> 7");
+
+        let cut = collections::HashSet::<usize>::from ([1]);
+        let ids = collections::HashMap::<usize, usize>::from ([ (2,2), (3,3) ]);
+        let id_fn = |v| Ok (ids.get (&v).copied ());
+
+        let r = super::overlapping_components (&g, &cut, id_fn).unwrap ();
+
+        let solution = collections::HashMap::<usize, collections::HashSet<usize>>::from ([
+            ( 2, collections::HashSet::<usize>::from ([1,2,4,5]) ),
+            ( 3, collections::HashSet::<usize>::from ([1,3,6,7]) ),
+        ]);
+        assert_eq! (r, solution);
+    }
+
+    #[test]
+    fn test_overlapping_components_invalid_id ()
+    {
+        init ();
+        let mut g = graph::Graph::new ();
+        //       1
+        //      / \
+        //     /   \
+        //    /     \
+        //   2       3
+        //  / \     / \
+        // 4   5   6   7
+        g.add_edge_raw (1,2,0).expect ("Failed to add edge 1 -> 2");
+        g.add_edge_raw (1,3,0).expect ("Failed to add edge 1 -> 3");
+        g.add_edge_raw (2,4,0).expect ("Failed to add edge 2 -> 4");
+        g.add_edge_raw (2,5,0).expect ("Failed to add edge 2 -> 5");
+        g.add_edge_raw (3,6,0).expect ("Failed to add edge 3 -> 6");
+        g.add_edge_raw (3,7,0).expect ("Failed to add edge 3 -> 7");
+
+        let cut = collections::HashSet::<usize>::new ();
+        let ids = collections::HashMap::<usize, usize>::from ([ (2,2), (3,3) ]);
+        let id_fn = |v| Ok (ids.get (&v).copied ());
+
+        let r = super::overlapping_components (&g, &cut, id_fn).unwrap_err ();
+        let solution = collections::HashSet::<String>::from ([
+            String::from ("Data error: Found vertex: 2 with label 2 in component with label 3."),
+            String::from ("Data error: Found vertex: 3 with label 3 in component with label 2."),
+        ]);
+
+        assert! (solution.contains (&r.to_string ()), "Id function supplied non unique id: {}", r.to_string ());
     }
 
     #[test]
