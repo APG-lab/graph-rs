@@ -572,23 +572,18 @@ pub fn overlapping_components_extend<T,F> (g: &graph::Graph, extend: &collection
     -> Result<collections::HashMap<T, collections::HashSet<usize>>, error::GraphError>
     where
         T: fmt::Debug + Clone + hash::Hash + Ord + Sized,
-        F: Fn(usize) -> Result<Option<T>, error::GraphError>
+        F: Fn(usize) -> Result<collections::HashSet<T>, error::GraphError>
 {
     let mut r = collections::HashMap::<T, collections::HashSet::<usize>>::new ();
 
     let mut fringe = collections::BinaryHeap::<MultiLabelState<T>>::new ();
     let ids = g.vertices ()
         .into_iter ()
-        .try_fold (collections::HashMap::<usize, T>::new (), |mut acc, item| {
-                if let Some (i) = f (*item)?
-                {
-                    acc.insert (*item, i);
-                    Ok::<_, error::GraphError> (acc)
-                }
-                else
-                {
-                    Ok::<_, error::GraphError> (acc)
-                }
+        .try_fold (collections::HashMap::<usize, collections::HashSet<T>>::new (), |mut acc, item| {
+                acc.entry (*item)
+                    .or_insert (collections::HashSet::<T>::new ())
+                    .extend (f (*item)?);
+                Ok::<_, error::GraphError> (acc)
             })?;
 
     let neighbours = g.vertices ()
@@ -602,11 +597,14 @@ pub fn overlapping_components_extend<T,F> (g: &graph::Graph, extend: &collection
 
     let mut neighbours_iters = collections::HashMap::<T, collections::HashMap::<usize, ops::Range<usize>>>::new ();
 
-    for ( k, v ) in &ids
+    for ( v, v_ids ) in &ids
     {
-        fringe.push (MultiLabelState { cost: 0, label: v.clone (), v: *k });
-        r.insert (v.clone (), collections::HashSet::<usize>::from ([*k]));
-        neighbours_iters.insert (v.clone (), neighbours.iter ().map (|x| { ( *x.0, 0..x.1.len () ) }).collect::<collections::HashMap<_,_>> ());
+        for v_id in v_ids
+        {
+            fringe.push (MultiLabelState { cost: 0, label: v_id.clone (), v: *v });
+            r.insert (v_id.clone (), collections::HashSet::<usize>::from ([*v]));
+            neighbours_iters.insert (v_id.clone (), neighbours.iter ().map (|x| { ( *x.0, 0..x.1.len () ) }).collect::<collections::HashMap<_,_>> ());
+        }
     }
 
     while let Some (MultiLabelState { cost, label, v }) = fringe.peek ()
@@ -636,6 +634,89 @@ pub fn overlapping_components_extend<T,F> (g: &graph::Graph, extend: &collection
                         fringe.push (MultiLabelState { cost: cost + 1, label: label.clone (), v: v_next });
                     }
                     r.get_mut (&label_copy).unwrap ().insert (v_next);
+                },
+                ( true, false ) => {}
+            }
+        }
+        else
+        {
+            fringe.pop ();
+        }
+    }
+
+    Ok (r)
+}
+
+pub fn overlapping_components_extend_indirect<T,F> (g: &graph::Graph, extend: &collections::HashSet<usize>, f: F)
+    -> Result<(collections::HashMap<T, usize>, collections::HashMap<usize, collections::HashSet<usize>>), error::GraphError>
+    where
+        T: fmt::Debug + Clone + hash::Hash + Ord + Sized,
+        F: Fn(usize) -> Result<collections::HashSet<T>, error::GraphError>
+{
+    let mut r = ( collections::HashMap::<T, usize>::new (), collections::HashMap::<usize, collections::HashSet::<usize>>::new () );
+
+    let mut fringe = collections::BinaryHeap::<MultiLabelState<usize>>::new ();
+    let ids = g.vertices ()
+        .into_iter ()
+        .try_fold (collections::HashMap::<usize, collections::HashSet<T>>::new (), |mut acc, item| {
+                acc.entry (*item)
+                    .or_insert (collections::HashSet::<T>::new ())
+                    .extend (f (*item)?);
+                Ok::<_, error::GraphError> (acc)
+            })?;
+
+    let neighbours = g.vertices ()
+        .iter ()
+        .fold (collections::HashMap::<usize, Vec<usize>>::new (), |mut acc, item| {
+            let mut nvec = g.neighbours (item).unwrap ().into_iter ().collect::<Vec<_>> ();
+            nvec.sort ();
+            acc.insert (*item, nvec);
+            acc
+        });
+
+    let mut neighbours_iters = collections::HashMap::<usize, collections::HashMap::<usize, ops::Range<usize>>>::new ();
+
+    for ( v, v_ids ) in &ids
+    {
+        if !v_ids.is_empty ()
+        {
+            for v_id in v_ids
+            {
+                r.0.insert (v_id.clone (), *v);
+            }
+            fringe.push (MultiLabelState { cost: 0, label: *v, v: *v });
+            r.1.insert (*v, collections::HashSet::<usize>::from ([*v]));
+            neighbours_iters.insert (*v, neighbours.iter ().map (|x| { ( *x.0, 0..x.1.len () ) }).collect::<collections::HashMap<_,_>> ());
+        }
+    }
+
+    while let Some (MultiLabelState { cost, label, v }) = fringe.peek ()
+    {
+        //debug! ("resolve fringe: {} {:?} {}", cost, label, v);
+        let neigbours_iter = neighbours_iters.get_mut (&label)
+            .unwrap ()
+            .get_mut (&v)
+            .unwrap ();
+        if let Some (n_index) = neigbours_iter.next ()
+        {
+            let v_next = neighbours.get (&v)
+                .unwrap ()
+                .get (n_index)
+                .copied ()
+                .unwrap ();
+
+            //debug! ("{:?} visit {}:{} -- {}:{}", label, v, extend.contains (&v), v_next, extend.contains (&v_next));
+            let label_copy = label.clone ();
+            match ( extend.contains (&v), extend.contains (&v_next) )
+            {
+                ( true , true  ) |
+                ( false, true  ) |
+                ( false, false ) => {
+                    if !r.1.get (&label).unwrap ().contains (&v_next)
+                    {
+                        fringe.push (MultiLabelState { cost: cost + 1, label: label.clone (), v: v_next });
+                    }
+                    r.1.get_mut (&label_copy).unwrap ().insert (v_next);
                 },
                 ( true, false ) => {}
             }
@@ -1771,7 +1852,7 @@ mod tests
 
         let extend = collections::HashSet::<usize>::from ([2,3]);
         let ids = collections::HashMap::<usize, usize>::from ([ (4,4), (5,5) ]);
-        let id_fn = |v| Ok (ids.get (&v).copied ());
+        let id_fn = |v| Ok ( ids.get (&v).copied ().map (|x| collections::HashSet::<usize>::from ([x])).unwrap_or (collections::HashSet::<usize>::new ()) );
 
         let r = super::overlapping_components_extend (&g, &extend, id_fn).unwrap ();
         let solution = collections::HashMap::<usize, collections::HashSet<usize>>::from ([
@@ -1781,6 +1862,87 @@ mod tests
 
         assert_eq! (r, solution);
     }
+
+    #[test]
+    fn test_overlapping_components_extend_generic_multiple_ids ()
+    {
+        init ();
+        let mut g = graph::Graph::new ();
+        //       1
+        //       |
+        //       2
+        //       |
+        //       3
+        //      / \
+        //     /   \
+        //    /     \
+        //   4       5
+        g.add_edge_raw (1, 2,0).expect ("Failed to add edge 1 ->  2");
+        g.add_edge_raw (2, 3,0).expect ("Failed to add edge 2 ->  3");
+        g.add_edge_raw (3, 4,0).expect ("Failed to add edge 3 ->  4");
+        g.add_edge_raw (3, 5,0).expect ("Failed to add edge 3 ->  5");
+
+        let extend = collections::HashSet::<usize>::from ([2,3]);
+        let ids = collections::HashMap::<usize, collections::HashSet::<(usize, usize)>>::from ([
+            ( 4, collections::HashSet::<(usize, usize)>::from ([ (0,4), (1,4) ]) ),
+            ( 5, collections::HashSet::<(usize, usize)>::from ([ (0,5) ]) ),
+        ]);
+        //let id_fn = |v| Ok (ids.iter ().find (|x| x.1 == v));
+        let id_fn = |v| Ok ( ids.get (&v).cloned ().unwrap_or (collections::HashSet::<(usize,usize)>::new ()) );
+
+        let r = super::overlapping_components_extend (&g, &extend, id_fn).unwrap ();
+        let solution = collections::HashMap::<(usize, usize), collections::HashSet<usize>>::from ([
+            ( ( 0, 4 ), collections::HashSet::<usize>::from ([2,3,4]) ),
+            ( ( 1, 4 ), collections::HashSet::<usize>::from ([2,3,4]) ),
+            ( ( 0, 5 ), collections::HashSet::<usize>::from ([2,3,5]) ),
+        ]);
+
+        assert_eq! (r, solution);
+    }
+
+    #[test]
+    fn test_overlapping_components_extend_indirect_generic_multiple_ids ()
+    {
+        init ();
+        let mut g = graph::Graph::new ();
+        //       1
+        //       |
+        //       2
+        //       |
+        //       3
+        //      / \
+        //     /   \
+        //    /     \
+        //   4       5
+        g.add_edge_raw (1, 2,0).expect ("Failed to add edge 1 ->  2");
+        g.add_edge_raw (2, 3,0).expect ("Failed to add edge 2 ->  3");
+        g.add_edge_raw (3, 4,0).expect ("Failed to add edge 3 ->  4");
+        g.add_edge_raw (3, 5,0).expect ("Failed to add edge 3 ->  5");
+
+        let extend = collections::HashSet::<usize>::from ([2,3]);
+        let ids = collections::HashMap::<usize, collections::HashSet::<(usize, usize)>>::from ([
+            ( 4, collections::HashSet::<(usize, usize)>::from ([ (0,4), (1,4) ]) ),
+            ( 5, collections::HashSet::<(usize, usize)>::from ([ (0,5) ]) ),
+        ]);
+
+        let id_fn = |v| Ok ( ids.get (&v).cloned ().unwrap_or (collections::HashSet::<(usize,usize)>::new ()) );
+
+        let r = super::overlapping_components_extend_indirect (&g, &extend, id_fn).unwrap ();
+        let solution = (
+                collections::HashMap::<(usize, usize), usize>::from ([
+                    ( ( 0, 4 ), 4 ),
+                    ( ( 1, 4 ), 4 ),
+                    ( ( 0, 5 ), 5 ),
+                ]),
+                collections::HashMap::<usize, collections::HashSet<usize>>::from ([
+                    ( 4, collections::HashSet::<usize>::from ([2,3,4]) ),
+                    ( 5, collections::HashSet::<usize>::from ([2,3,5]) ),
+                ])
+            );
+
+        assert_eq! (r, solution);
+    }
+
 
     #[test]
     fn test_single_shortest_path ()
